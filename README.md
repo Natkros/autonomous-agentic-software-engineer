@@ -12,12 +12,21 @@ and [`AGENTS.md`](AGENTS.md).
 **This repository was built incrementally, one phase at a time.** Only
 claim a feature works if the relevant phase's status doc says it was
 actually run and verified. Current status: **all 10 roadmap phases
-complete** — see [`PHASE_1_STATUS.md`](PHASE_1_STATUS.md) through
-[`PHASE_10_STATUS.md`](PHASE_10_STATUS.md) for exactly what was built and
+complete, plus a Phase 11 follow-up** that wires the previously-standalone
+self-correction/review/security/git machinery into one real end-to-end
+pipeline and adds production hardening (Alembic migrations, rate
+limiting, fail-fast config validation) — see
+[`PHASE_1_STATUS.md`](PHASE_1_STATUS.md) through
+[`PHASE_11_STATUS.md`](PHASE_11_STATUS.md) for exactly what was built and
 tested in each one versus what's explicitly still unverified or out of
 scope. "Complete" describes the roadmap's phases, not a finished,
 production-ready product — see "What does not exist yet" below and each
 phase doc's own limits before relying on any of this.
+
+**Live deployment**: a real instance runs on Render, with a real
+`ANTHROPIC_API_KEY` wired in — see [`RUNNING.md`](RUNNING.md) for the
+URLs, what's actually verified against them, and the free-tier limits
+that apply.
 
 ## What works right now
 

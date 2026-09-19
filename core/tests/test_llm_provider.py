@@ -118,3 +118,34 @@ def test_anthropic_provider_without_api_key_raises_clear_error(monkeypatch):
 def test_default_provider_falls_back_to_mock_without_api_key(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     assert isinstance(get_default_llm_provider(), MockLLMProvider)
+
+
+def test_anthropic_provider_surfaces_the_apis_actual_error_message(monkeypatch):
+    """Regression test for a real bug found against the live Anthropic API
+    (a 400 from an exhausted credit balance): the original exception
+    handler discarded urllib's response body, so every failure surfaced as
+    the generic "HTTP Error 400: Bad Request" — useless for diagnosing
+    what actually went wrong. Anthropic's real error body has the shape
+    reproduced here.
+    """
+    import io
+    import urllib.error
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    provider = AnthropicLLMProvider()
+
+    real_error_body = (
+        b'{"type":"error","error":{"type":"invalid_request_error",'
+        b'"message":"Your credit balance is too low to access the Anthropic API."}}'
+    )
+
+    def _raise_http_error(*args, **kwargs):
+        raise urllib.error.HTTPError(
+            url="https://api.anthropic.com/v1/messages", code=400, msg="Bad Request",
+            hdrs=None, fp=io.BytesIO(real_error_body),
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", _raise_http_error)
+
+    with pytest.raises(LLMProviderError, match="credit balance is too low"):
+        provider.generate_structured(system_prompt="", user_prompt="", schema=RequirementAnalysis)

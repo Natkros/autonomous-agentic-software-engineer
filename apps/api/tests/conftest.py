@@ -5,6 +5,10 @@ import tempfile
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("JWT_SECRET", "test-secret")
+# Disables the /auth rate limiter (app/rate_limit.py) — this suite's many
+# rapid register/login calls from the same TestClient "IP" would otherwise
+# trip it within a single test run.
+os.environ.setdefault("ENVIRONMENT", "test")
 
 import pytest
 from fastapi.testclient import TestClient

@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
 from typing import TypeVar
@@ -207,7 +208,7 @@ class AnthropicLLMProvider(LLMProvider):
     environment) — verify manually before relying on it in production.
     """
 
-    def __init__(self, model: str = "claude-sonnet-4-5-20250929"):
+    def __init__(self, model: str = "claude-sonnet-5"):
         self.model = model
         self.api_key = os.environ.get("ANTHROPIC_API_KEY")
 
@@ -245,6 +246,17 @@ class AnthropicLLMProvider(LLMProvider):
         try:
             with urllib.request.urlopen(request, timeout=60) as response:
                 body = json.loads(response.read())
+        except urllib.error.HTTPError as exc:
+            # Anthropic returns a real, actionable error body (invalid
+            # model, bad request shape, insufficient credit balance, rate
+            # limit, ...) — surface it instead of the generic "HTTP Error
+            # 400: Bad Request" urllib gives by default, which was
+            # previously the only thing this raised.
+            try:
+                detail = json.loads(exc.read()).get("error", {}).get("message", exc.reason)
+            except Exception:
+                detail = exc.reason
+            raise LLMProviderError(f"Anthropic API request failed ({exc.code}): {detail}") from exc
         except Exception as exc:
             raise LLMProviderError(f"Anthropic API request failed: {exc}") from exc
 

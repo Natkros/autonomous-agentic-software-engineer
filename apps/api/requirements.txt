@@ -10,6 +10,7 @@ python-multipart==0.0.20
 psycopg[binary]==3.2.10
 redis==5.2.0
 alembic==1.14.0
+slowapi==0.1.10
 email-validator==2.2.0
 esprima==4.0.1
 qdrant-client==1.12.1

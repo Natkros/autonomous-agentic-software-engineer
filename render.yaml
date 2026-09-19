@@ -1,0 +1,52 @@
+# Render Blueprint — documents the exact live deployment created for this
+# project (see PHASE_11_STATUS.md). Render's Blueprint feature can apply
+# this directly (Dashboard -> New -> Blueprint, pointing at this repo) to
+# reproduce the same two services + database from scratch; the live
+# deployment itself was created via Render's REST API with the equivalent
+# configuration below, not by applying this file, since a fresh Blueprint
+# apply prompts interactively for secret values in the dashboard.
+#
+# Free-tier notes (see RUNNING.md): the free Postgres instance expires 30
+# days after creation unless upgraded, and free web services spin down
+# after 15 minutes of inactivity (the next request wakes them, with a
+# ~30-60s cold start).
+databases:
+  - name: forgeai-db
+    databaseName: forgeai
+    plan: free
+    region: oregon
+    postgresMajorVersion: "16"
+
+services:
+  - type: web
+    name: forgeai-api
+    runtime: docker
+    dockerfilePath: ./infrastructure/docker/api.Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    healthCheckPath: /api/ready
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: forgeai-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ANTHROPIC_API_KEY
+        sync: false # set manually in the dashboard — never committed
+      - key: ENVIRONMENT
+        value: production
+      - key: CORS_ORIGINS
+        value: '["https://forgeai-web.onrender.com"]'
+
+  - type: web
+    name: forgeai-web
+    runtime: docker
+    dockerfilePath: ./infrastructure/docker/web.Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        value: https://forgeai-api.onrender.com # update to the actual assigned URL if Render appends a slug

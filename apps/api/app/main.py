@@ -7,9 +7,13 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from alembic import command as alembic_command
+from alembic.config import Config as AlembicConfig
+from slowapi.errors import RateLimitExceeded
+
 from app.api.routes import auth, health, metrics, repositories, tasks
 from app.config import get_settings
-from app.database import Base, engine
+from app.rate_limit import limiter
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 if _REPO_ROOT not in sys.path:
@@ -17,21 +21,58 @@ if _REPO_ROOT not in sys.path:
 
 from core.observability.logging_config import configure_json_logging  # noqa: E402
 
+_API_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 settings = get_settings()
 logger = logging.getLogger("forgeai.api")
 
 
+def run_migrations() -> None:
+    """Apply every pending Alembic migration (see `migrations/`) up to
+    `head`. Replaces the `Base.metadata.create_all` this project used
+    through Phase 10 — that call could create tables but never evolve an
+    existing one, so every schema change from here on is a real, reviewable
+    migration file instead. `migrations/env.py` reads the same
+    `DATABASE_URL` this app itself uses (`app/config.py`), so this always
+    migrates the real target database, never a hardcoded one.
+    """
+    alembic_cfg = AlembicConfig(os.path.join(_API_ROOT, "alembic.ini"))
+    alembic_cfg.set_main_option("script_location", os.path.join(_API_ROOT, "migrations"))
+    alembic_command.upgrade(alembic_cfg, "head")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Fail loudly before doing anything else if this is a production
+    # deployment still running the well-known default JWT secret.
+    settings.validate_for_startup()
     # Phase 9: every log line from here on is a single JSON object — see
     # core/observability/logging_config.py.
     configure_json_logging()
-    # Phase 1: schema is created directly. Alembic migrations land in a later phase.
-    Base.metadata.create_all(bind=engine)
+    run_migrations()
     yield
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
+
+app.state.limiter = limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    # Same error envelope as every other error response — see
+    # http_exception_handler below — rather than slowapi's own default
+    # plain-text shape.
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": {
+                "code": "HTTP_429",
+                "message": "Too many requests. Please wait before trying again.",
+                "retryable": True,
+            }
+        },
+    )
+
 
 app.add_middleware(
     CORSMiddleware,

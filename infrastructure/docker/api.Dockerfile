@@ -29,6 +29,8 @@ COPY agents agents
 COPY tools tools
 COPY sandbox sandbox
 COPY apps/api/app apps/api/app
+COPY apps/api/migrations apps/api/migrations
+COPY apps/api/alembic.ini apps/api/alembic.ini
 
 WORKDIR /app/apps/api
 
