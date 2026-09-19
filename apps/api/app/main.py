@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
 from slowapi.errors import RateLimitExceeded
+from sqlalchemy.exc import DatabaseError
 
 from app.api.routes import auth, health, metrics, repositories, tasks
 from app.config import get_settings
@@ -34,10 +35,38 @@ def run_migrations() -> None:
     migration file instead. `migrations/env.py` reads the same
     `DATABASE_URL` this app itself uses (`app/config.py`), so this always
     migrates the real target database, never a hardcoded one.
+
+    Handles one real, one-time transition case found deploying this
+    exact change to this project's own live database: every deployment
+    before this one used `Base.metadata.create_all`, which already
+    created every table `eca74b6ad778` (the initial migration) also
+    creates — but with no `alembic_version` row recording that. Run
+    `upgrade` straight against that database and it fails outright
+    (`relation "users" already exists`), inside a transaction Postgres
+    rolls back cleanly, so it's always safe to catch and instead `stamp`
+    the database at `head`: this asserts "the schema already matches
+    this revision," which is true, without re-running any DDL. Any other
+    database error (a real migration bug) is not swallowed — it still
+    raises. Caught as the dialect-agnostic `DatabaseError` base class
+    deliberately: Postgres/psycopg raises `ProgrammingError` for
+    "relation already exists" while SQLite raises `OperationalError` for
+    the equivalent "table already exists" — both are `DatabaseError`
+    subclasses, and this project's tests run against SQLite while
+    production runs Postgres.
     """
     alembic_cfg = AlembicConfig(os.path.join(_API_ROOT, "alembic.ini"))
     alembic_cfg.set_main_option("script_location", os.path.join(_API_ROOT, "migrations"))
-    alembic_command.upgrade(alembic_cfg, "head")
+    try:
+        alembic_command.upgrade(alembic_cfg, "head")
+    except DatabaseError as exc:
+        if "already exists" not in str(exc).lower():
+            raise
+        logger.warning(
+            "Migration target tables already exist with no alembic_version recorded "
+            "(expected once, adopting Alembic on a database created by the old "
+            "Base.metadata.create_all path) — stamping at head instead of re-running DDL."
+        )
+        alembic_command.stamp(alembic_cfg, "head")
 
 
 @asynccontextmanager

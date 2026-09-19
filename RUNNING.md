@@ -81,7 +81,7 @@ cd apps/api
 python -m venv .venv
 source .venv/Scripts/activate      # Windows Git Bash; use .venv/bin/activate on macOS/Linux
 pip install -r requirements-dev.txt
-python -m pytest -v                # 32 passed
+python -m pytest -v                # 35 passed
 
 # Without Postgres running:
 export DATABASE_URL=sqlite:///./dev.db

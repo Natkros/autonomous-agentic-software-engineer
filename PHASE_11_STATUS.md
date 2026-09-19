@@ -69,10 +69,13 @@ scope.
   migration-on-startup behavior inside the container, caught before
   pushing by re-reading the Dockerfile against what `main.py`'s
   `run_migrations()` actually needs at runtime.
-- [x] **Test count**: `core` grew from 64 to 67 (new `test_execution_node.py`),
-  `apps/api` grew from 25 to 32 (2 new pipeline-wiring tests in
-  `test_tasks.py`, 5 new hardening tests). **278 tests total**, all
-  re-verified in clean Python 3.12 virtual environments.
+- [x] **Test count**: `core` grew from 64 to 68 (`test_execution_node.py`'s
+  3 tests plus a regression test for the Anthropic error-detail fix
+  below), `apps/api` grew from 25 to 35 (2 new pipeline-wiring tests in
+  `test_tasks.py`, 5 new hardening tests, 3 new migration-adoption tests
+  — see "A real bug found deploying this exact phase's own code" below).
+  **282 tests total**, all re-verified in clean Python 3.12 virtual
+  environments.
 - [x] **A real deployment, with a real Anthropic API key**, on Render:
   - `forgeai-db` — a managed Postgres 16 instance.
   - `forgeai-api` — the real `infrastructure/docker/api.Dockerfile`
@@ -89,6 +92,51 @@ scope.
   them, and the free-tier limits that apply (Postgres expires after 30
   days unless upgraded; both web services spin down after 15 minutes of
   inactivity, with a cold start on the next request).
+
+## A real bug found deploying this exact phase's own code
+
+Redeploying `forgeai-api` with this phase's changes failed
+(`update_failed`) on the very first attempt. Render's logs showed the
+container starting, Alembic logging `Running upgrade -> eca74b6ad778,
+initial schema`, and then the process exiting with no further output —
+confusing at first because the *previous* live instance's own successful
+`/api/ready` health checks were interleaved in the same log stream,
+making it briefly look like the new instance had started serving traffic
+before dying. Filtering Render's logs by the new instance's own ID
+isolated the real sequence: migrations started, and the container exited
+immediately after, before ever logging "Application startup complete".
+
+Root cause: every deployment before this one started up using
+`Base.metadata.create_all`, which had already created every table
+(`users`, `repositories`, `repository_analyses`, `tasks`) directly in the
+live Postgres database — with no `alembic_version` table recording that.
+The new `alembic upgrade head` had no way to know the schema already
+existed, so `CREATE TABLE users (...)` failed with `relation "users"
+already exists`, an unhandled `ProgrammingError` that killed the process
+during startup.
+
+Fixed in `app/main.py`'s `run_migrations()`: catch the dialect-agnostic
+`DatabaseError` base class (Postgres/psycopg raises `ProgrammingError`
+for this; SQLite — what this project's tests run against — raises
+`OperationalError` for the equivalent case, caught by the same test
+before it was ever pushed), and if the message says a table already
+exists, `alembic stamp head` instead of re-running the DDL — asserting
+"the schema already matches this revision" (true) rather than trying to
+recreate it. Reproduced locally first with a real SQLite database
+(`Base.metadata.create_all` then `run_migrations()`) before writing the
+fix, and `apps/api/tests/test_migrations.py` keeps this exact adoption
+path — and plain idempotent re-runs — covered permanently. Redeployed
+and confirmed live: `GET /api/ready` returns `{"status":"ready",
+"database":"reachable"}` from the real production database.
+
+Deliberately not fixed by opening the database's network access to
+run a one-off manual `alembic stamp` from outside Render's network — the
+auto-mode safety classifier declined that action ("Security Weaken": a
+production database's IP allow-list is a real security boundary), and
+the code-level fix above is more correct anyway: it makes this adoption
+path safe for *any* future reader of this repository who deploys it
+against their own pre-existing database, not just a one-time manual
+fix for this specific instance.
 
 ## Explicitly NOT done in this phase
 
@@ -127,10 +175,10 @@ scope.
 
 ```bash
 cd core && python -m venv .venv && source .venv/Scripts/activate
-pip install -r requirements-dev.txt && python -m pytest -v   # 67 passed
+pip install -r requirements-dev.txt && python -m pytest -v   # 68 passed
 
 cd ../apps/api && python -m venv .venv && source .venv/Scripts/activate
-pip install -r requirements-dev.txt && python -m pytest -v   # 32 passed
+pip install -r requirements-dev.txt && python -m pytest -v   # 35 passed
 ```
 
 See `RUNNING.md` for how to exercise the live deployment, and for the
