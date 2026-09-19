@@ -311,7 +311,8 @@ are still not implemented.
 
 ## Contributing
 
-All 10 roadmap phases are complete, but "complete" describes the
-roadmap's scope, not a finished product — see each phase status doc, and
-`PHASE_10_STATUS.md`'s "Where this leaves the project" section, before
-assuming any capability beyond what's explicitly documented as verified.
+All 10 roadmap phases are complete, plus a Phase 11 follow-up wiring the
+pipeline end-to-end and hardening it for production, but "complete"
+describes scope, not a finished product — see each phase status doc, and
+`PHASE_11_STATUS.md`'s "Explicitly NOT done" section, before assuming any
+capability beyond what's explicitly documented as verified.

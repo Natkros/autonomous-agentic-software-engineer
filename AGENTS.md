@@ -57,31 +57,39 @@ stubs — a real, true finding about this project's current LLM layer.
 
 ## Orchestration
 
-Four things exist, not yet connected to each other:
+As of Phase 11, everything below is wired into one real, compiled
+**LangGraph** `StateGraph` (`core/orchestration/graph.py`, used by
+`POST /api/tasks`):
 
-1. A real, compiled **LangGraph** `StateGraph`
-   (`core/orchestration/graph.py`, used by `POST /api/tasks`) wiring
-   `requirement -> repository -> planner -> coder -> END`, driven by a
-   single explicit `AgentState` TypedDict (`core/state/agent_state.py`).
-   It stops after the Coder *proposes* a patch.
-2. A real, bounded self-correction loop
-   (`core/orchestration/self_correction.py`): apply a proposed patch,
-   run tests, and on failure diagnose + retry, up to 5 iterations, then
-   stop and report `NEEDS_HUMAN_INTERVENTION`. Callable and tested
-   standalone; not yet invoked from `graph.py` or the API (a deliberate,
-   separately-reviewable next step — see `PHASE_5_STATUS.md`).
-3. `SecurityAgent` and `CodeReviewAgent` (Phase 6): each callable
-   standalone against a repository path or a single `PatchProposal`
-   respectively, also not yet invoked from `graph.py` or the API.
-4. `tools/git`'s branch/commit/push tools plus
-   `core/policies/approval.py` (Phase 7): real, individually tested, not
-   yet chained into one "open a PR for this change" operation, and not
-   invoked from `graph.py` or the API — see `PHASE_7_STATUS.md`.
+```
+requirement -> repository -> planner -> coder -> execution -> END
+```
 
-No agent relies on hidden conversational context in any of the four.
-Each `graph.py` node catches its own failures into `state["errors"]`
-rather than crashing the run. See `ARCHITECTURE.md` for the full target
-graph shape.
+driven by a single explicit `AgentState` TypedDict
+(`core/state/agent_state.py`). The `execution` node (new in Phase 11) is
+what actually connects the previously-standalone Phase 5/6/7 machinery:
+
+1. Reviews every proposal the Coder produced (`CodeReviewAgent`, Phase 6)
+   before anything is applied.
+2. Applies and tests each approved one through the real, bounded
+   self-correction loop (`core/orchestration/self_correction.py`, Phase
+   5: apply -> test -> diagnose -> retry, up to 5 iterations, then
+   `NEEDS_HUMAN_INTERVENTION`) — but only if the active `AutonomyLevel`
+   allows `SAFE_WRITE`; below that, a structured `ApprovalRequest` comes
+   back instead and nothing is written.
+3. Runs a whole-workspace security scan (`SecurityAgent`, Phase 6) as a
+   finalization gate.
+4. Commits via `tools/git`'s `GitCommitTool` (Phase 7) only if autonomy
+   allows `GIT_WRITE` — again, an `ApprovalRequest` otherwise. `git.push`
+   is deliberately never called from here — see `PHASE_11_STATUS.md`.
+
+No agent relies on hidden conversational context anywhere in this graph.
+Each node catches its own failures into `state["errors"]` rather than
+crashing the run. See `ARCHITECTURE.md` for the full target graph shape
+and `PHASE_11_STATUS.md` for exactly what's verified (a real git commit
+against a real temporary repository, and the same flow through the real
+`/api/tasks` endpoint) versus still out of scope (opening a PR, a
+background job queue).
 
 ## Tool framework
 
