@@ -6,10 +6,14 @@ which parts of it exist today versus which are placeholders for a later phase.
 
 ## Target system
 
-As of Phase 3, the top half of this diagram — from USER down through the
-Requirement/Repository/Planning agents to a proposed patch — is real,
-running code (see "What exists today" below). Everything from the
-Execution Agent / Docker Sandbox downward is still Phase 4+.
+As of Phase 4, everything from USER down through the Terminal/Editor/Git
+tool row is real, running code, EXCEPT that nothing currently connects the
+Planning/Coding agents to the Execution Agent — the tools exist and are
+tested standalone (see "What exists today" below) but the pipeline itself
+stops after producing a patch *proposal*. Docker Sandbox exists as real
+code but is unverified (no live daemon in this environment — see
+`sandbox/README.md`). Test/Debug/Review/Security agents and Git PR
+automation are still Phase 5+.
 
 ```
                     USER
@@ -59,7 +63,7 @@ Execution Agent / Docker Sandbox downward is still Phase 4+.
                  Final Validator -> Human Approval -> Git PR
 ```
 
-## What exists today (Phases 1-3)
+## What exists today (Phases 1-4)
 
 - `apps/api` — FastAPI backend with JWT authentication (register/login),
   role-based `User` model, `Repository` CRUD scoped to the owner, a
@@ -91,9 +95,21 @@ Execution Agent / Docker Sandbox downward is still Phase 4+.
   `AutonomyLevel` policy engine; and `core/orchestration/graph.py`, a real
   compiled **LangGraph** `StateGraph`. 24/24 tests pass.
 - `tools` — the controlled `Tool` interface (permission-checked,
-  timed, audit-logged on every call) plus three real READ_ONLY tools
-  wrapping `code_intelligence`: `repository.analyze`, `code.search`,
-  `symbol.search`. 12/12 tests pass.
+  timed, audit-logged on every call). Three READ_ONLY tools wrapping
+  `code_intelligence` (`repository.analyze`, `code.search`,
+  `symbol.search`); a path-jailed `Workspace` plus `filesystem.read`,
+  `filesystem.list`, `filesystem.write`, `filesystem.delete`, and
+  `filesystem.patch` (structured create/replace/insert/delete that
+  syntax-verifies Python content before ever writing it); an allowlisted
+  `terminal.execute`; and `test.run`, which runs pytest through a sandbox
+  and parses real pass/fail/error/skip counts. 52/52 tests pass, including
+  a real end-to-end apply-a-patch-then-run-the-suite integration test.
+- `sandbox` — a `Sandbox` interface: `LocalProcessSandbox` (real, tested,
+  no true isolation — see `sandbox/README.md`) and `DockerSandbox` (real,
+  complete code — network-disabled, memory/CPU-limited containers —
+  **unverified**, no live daemon here). `get_default_sandbox()` picks
+  Docker only after actually confirming a daemon responds. 12/12 tests
+  pass.
 - `agents` — four working agents: `RequirementAnalystAgent`,
   `RepositoryExplorerAgent` (no LLM needed — wraps Phase 2's scanner),
   `PlanningAgent` (validates its own output has no dangling task
@@ -108,23 +124,25 @@ Execution Agent / Docker Sandbox downward is still Phase 4+.
 - `docker-compose.yml` + `infrastructure/docker/*.Dockerfile` — Postgres,
   Redis, API, and web services wired together for local/prod-like runs.
   (Not yet exercised in this session, and the `api` image does not yet
-  include `code_intelligence`/`core`/`agents`/`tools` in its build context
-  — see `PHASE_2_STATUS.md`/`PHASE_3_STATUS.md`.)
-- `.github/workflows/ci.yml` — runs `code_intelligence`, `core`, `tools`,
-  `agents`, and `backend` pytest suites, plus a frontend production build,
-  on every push/PR.
+  include `code_intelligence`/`core`/`agents`/`tools`/`sandbox` in its
+  build context — see `PHASE_2_STATUS.md`/`PHASE_3_STATUS.md`.)
+- `.github/workflows/ci.yml` — runs `code_intelligence`, `core`,
+  `sandbox`, `tools`, `agents`, and `backend` pytest suites, plus a
+  frontend production build, on every push/PR.
 
-## What is scaffolded but not implemented (Phase 4+)
+## What is scaffolded but not implemented (Phase 5+)
 
 `agents/architecture`, `agents/tester`, `agents/debugger`,
 `agents/reviewer`, `agents/security`, `agents/documentation`,
-`agents/validator`, `sandbox/`, and `evaluation/` are currently empty
-directories (holding a `.gitkeep`) that reserve the shape described in the
-roadmap. None of the sandboxed tool execution, self-correction loop,
-review/security scanning, or evaluation harness exists yet. Do not assume
-any code there works until a later phase's status doc says so.
-(`code_intelligence/`, `core/`, `agents/{requirement,repository,planner,coder}`,
-and `tools/{base.py,search/}` are no longer placeholders — see above.)
+`agents/validator`, and `evaluation/` are currently empty directories
+(holding a `.gitkeep`) that reserve the shape described in the roadmap.
+None of the self-correction loop, review/security scanning, or evaluation
+harness exists yet. Do not assume any code there works until a later
+phase's status doc says so. (`code_intelligence/`, `core/`,
+`agents/{requirement,repository,planner,coder}`, `tools/`, and `sandbox/`
+are no longer placeholders — see above. Note the Coding Agent and the
+Phase 4 filesystem/terminal/test tools are NOT wired together yet — see
+`PHASE_4_STATUS.md` for why.)
 
 ## Database schema (Phase 1 subset)
 
@@ -200,10 +218,17 @@ All API errors are returned as:
 - CORS origins are explicit allow-list via `CORS_ORIGINS`, not `*`.
 
 RBAC enforcement beyond "own vs. not-own" and prompt-injection defenses
-are still not implemented. The permission-level system now exists
+are still not implemented. The permission-level system exists
 (`core/policies/permissions.py`: `READ_ONLY`/`SAFE_WRITE`/`EXECUTION`/
 `GIT_WRITE`/`DEPLOYMENT`, gated by a 0-5 `AutonomyLevel`, with
 `DEPLOYMENT` always requiring human approval) and is enforced by every
-`Tool.run()` call — but sandboxed execution of anything above READ_ONLY
-doesn't exist yet, so in practice only the three READ_ONLY search tools
-can currently run at all.
+`Tool.run()` call. As of Phase 4, tools exist at every level up through
+EXECUTION (`filesystem.write`/`filesystem.patch`/`filesystem.delete` at
+SAFE_WRITE, `terminal.execute`/`test.run` at EXECUTION) — but real OS-level
+isolation for anything they run is unverified: `DockerSandbox` is real,
+complete code, but no live Docker daemon exists in this development
+environment, so what actually runs today is `LocalProcessSandbox`, a
+process-level mitigation (working-directory confinement, a command
+allowlist, a timeout, a minimal environment), NOT the container isolation
+the spec calls for. See `sandbox/README.md` before deploying anything that
+executes agent-directed commands against real infrastructure.

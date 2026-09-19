@@ -11,10 +11,11 @@ and [`AGENTS.md`](AGENTS.md).
 
 **This repository is being built incrementally, one phase at a time.**
 Only claim a feature works if the relevant phase's status doc says it was
-actually run and verified. Current status: **Phase 3 complete** — see
+actually run and verified. Current status: **Phase 4 complete** — see
 [`PHASE_1_STATUS.md`](PHASE_1_STATUS.md),
-[`PHASE_2_STATUS.md`](PHASE_2_STATUS.md), and
-[`PHASE_3_STATUS.md`](PHASE_3_STATUS.md) for exactly what was built and
+[`PHASE_2_STATUS.md`](PHASE_2_STATUS.md),
+[`PHASE_3_STATUS.md`](PHASE_3_STATUS.md), and
+[`PHASE_4_STATUS.md`](PHASE_4_STATUS.md) for exactly what was built and
 tested versus what's still a placeholder.
 
 ## What works right now
@@ -32,30 +33,45 @@ tested versus what's still a placeholder.
 - **Agent pipeline**: `POST /api/tasks` clones a repository and runs a real,
   compiled **LangGraph** state machine — Requirement Analyst -> Repository
   Explorer -> Planner -> Coder — producing a validated task plan and
-  candidate patch proposals (proposals only; nothing is written to disk
-  yet). Every agent output is a schema-validated Pydantic model flowing
-  through one explicit `AgentState`, not hidden conversational context.
-  The LLM layer defaults to a deterministic offline provider
-  (`MockLLMProvider`) unless `ANTHROPIC_API_KEY` is set — see
-  [`PHASE_3_STATUS.md`](PHASE_3_STATUS.md) for exactly what that does and
-  doesn't mean about output quality.
-- A real pytest suite, **105 tests total**, run in this session:
-  `code_intelligence` (40), `core` (24), `tools` (12), `agents` (9),
-  `apps/api` (20).
+  candidate patch proposals (proposals only; not yet applied by the
+  pipeline itself). Every agent output is a schema-validated Pydantic
+  model flowing through one explicit `AgentState`, not hidden
+  conversational context. The LLM layer defaults to a deterministic
+  offline provider (`MockLLMProvider`) unless `ANTHROPIC_API_KEY` is set —
+  see [`PHASE_3_STATUS.md`](PHASE_3_STATUS.md) for exactly what that does
+  and doesn't mean about output quality.
+- **Sandboxed execution tools** (`sandbox/`, `tools/filesystem`,
+  `tools/terminal`, `tools/testing`): a path-jailed filesystem workspace;
+  structured patch application that verifies Python syntax *before*
+  writing (never leaves a broken file, even transiently); an allowlisted
+  terminal-execute tool; a pytest-running tool that parses real pass/fail
+  counts; and a `Sandbox` abstraction that uses real Docker isolation when
+  a daemon is available and a clearly-labeled weaker local-process
+  fallback when it isn't. A real end-to-end test copies a repository,
+  applies a hand-written patch, and confirms its test suite still passes
+  — see [`PHASE_4_STATUS.md`](PHASE_4_STATUS.md) for what's verified vs.
+  not (Docker isolation itself is unverified — no live daemon here).
+- A real pytest suite, **163 tests total**, run in this session:
+  `code_intelligence` (40), `core` (30), `sandbox` (12), `tools` (52),
+  `agents` (9), `apps/api` (20), plus the frontend build.
 
 ## What does not exist yet
 
-Sandboxed tool execution, self-correction/debugging loops, automated code
-review/security agents, Git branch/PR automation, observability, and the
-evaluation harness. These are Phases 4-10 of the roadmap below and are not
-implemented — the corresponding agent directories (`agents/architecture`,
-`agents/tester`, `agents/debugger`, `agents/reviewer`, `agents/security`,
-`agents/documentation`, `agents/validator`) and `sandbox/`/`evaluation/`
-are empty scaffolding. A call graph (which function calls which) also
-doesn't exist yet — only file-level import relationships are resolved.
-See `PHASE_2_STATUS.md` and `PHASE_3_STATUS.md` for the full list of
-explicit gaps, including that no real LLM call has ever been made in this
-environment (no network/API key here).
+Self-correction/debugging loops, automated code review/security agents,
+Git branch/PR automation, observability, and the evaluation harness. These
+are Phases 5-10 of the roadmap below and are not implemented — the
+corresponding agent directories (`agents/architecture`, `agents/tester`,
+`agents/debugger`, `agents/reviewer`, `agents/security`,
+`agents/documentation`, `agents/validator`) and `evaluation/` are empty
+scaffolding. The agent pipeline does not yet call any Phase 4 tool — the
+Coding Agent's output is still just a text proposal (see
+`PHASE_3_STATUS.md`/`PHASE_4_STATUS.md` for why wiring a placeholder
+proposal into a real filesystem write wouldn't demonstrate anything). A
+call graph (which function calls which) also doesn't exist yet — only
+file-level import relationships are resolved. See each phase's status doc
+for the full list of explicit gaps, including that no real LLM call has
+ever been made in this environment (no network/API key here) and Docker
+sandboxing has never been run against a live daemon here.
 
 ## Local development
 
@@ -89,10 +105,13 @@ cd code_intelligence && python -m venv .venv && source .venv/Scripts/activate
 pip install -r requirements-dev.txt && python -m pytest -v   # 40 passed
 
 cd ../core && python -m venv .venv && source .venv/Scripts/activate
-pip install -r requirements-dev.txt && python -m pytest -v   # 24 passed
+pip install -r requirements-dev.txt && python -m pytest -v   # 30 passed
+
+cd ../sandbox && python -m venv .venv && source .venv/Scripts/activate
+pip install -r requirements-dev.txt && python -m pytest -v   # 12 passed
 
 cd ../tools && python -m venv .venv && source .venv/Scripts/activate
-pip install -r requirements-dev.txt && python -m pytest -v   # 12 passed
+pip install -r requirements-dev.txt && python -m pytest -v   # 52 passed
 
 cd ../agents && python -m venv .venv && source .venv/Scripts/activate
 pip install -r requirements-dev.txt && python -m pytest -v   # 9 passed
@@ -119,9 +138,9 @@ docker compose up --build
 This brings up Postgres, Redis, the API (port 8000), and the web app
 (port 3000). **Note:** this compose stack has not been exercised in this
 environment (no Docker daemon available here), and its `api` image does
-not currently include `code_intelligence`/`core`/`agents`/`tools` in its
-build context, so `/analyze` and `/tasks` would not work inside it as-is
-— see `PHASE_2_STATUS.md`/`PHASE_3_STATUS.md`.
+not currently include `code_intelligence`/`core`/`agents`/`tools`/`sandbox`
+in its build context, so `/analyze` and `/tasks` would not work inside it
+as-is — see `PHASE_2_STATUS.md`/`PHASE_3_STATUS.md`.
 
 ## Environment variables
 
@@ -149,7 +168,7 @@ See [`.env.example`](.env.example) for the full list (`DATABASE_URL`,
 1. **Foundation** — repo, FastAPI, Next.js, Postgres, Redis, Docker, auth, basic UI. ✅ done
 2. **Repository intelligence** — indexing, AST, symbol extraction, vector search. ✅ done
 3. **Agent core** — `AgentState`, tool framework, LangGraph, planner, repository agent, coding agent. ✅ done
-4. Autonomous execution — sandboxed filesystem/terminal tools, patching, test runs.
+4. **Autonomous execution** — sandboxed filesystem/terminal tools, patching, test runs. ✅ done (Docker isolation itself unverified — see `PHASE_4_STATUS.md`)
 5. Self-correction — debugger, failure classification, iterative patch loop (max 5 iterations).
 6. Code review — static analysis, security scanning.
 7. Git automation — branches, commits, diffs, PRs, approval workflow.
@@ -160,11 +179,14 @@ See [`.env.example`](.env.example) for the full list (`DATABASE_URL`,
 ## Security model
 
 See [`ARCHITECTURE.md`](ARCHITECTURE.md#security-model-phase-1-subset) for
-what's enforced today, and [`PHASE_3_STATUS.md`](PHASE_3_STATUS.md) for the
-new permission-level/autonomy-level system. Sandboxed execution and
-prompt-injection defenses land in Phase 4+.
+what's enforced today, [`PHASE_3_STATUS.md`](PHASE_3_STATUS.md) for the
+permission-level/autonomy-level system, and
+[`PHASE_4_STATUS.md`](PHASE_4_STATUS.md) /
+[`sandbox/README.md`](sandbox/README.md) for exactly what level of
+execution isolation is and isn't provided today. Prompt-injection defenses
+are still not implemented.
 
 ## Contributing
 
 This is an active build-out; see the phase status docs before assuming any
-capability beyond Phase 3 exists.
+capability beyond Phase 4 exists.
