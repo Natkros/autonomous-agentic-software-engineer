@@ -11,8 +11,9 @@ and [`AGENTS.md`](AGENTS.md).
 
 **This repository is being built incrementally, one phase at a time.**
 Only claim a feature works if the relevant phase's status doc says it was
-actually run and verified. Current status: **Phase 1 complete** — see
-[`PHASE_1_STATUS.md`](PHASE_1_STATUS.md) for exactly what was built and
+actually run and verified. Current status: **Phase 2 complete** — see
+[`PHASE_1_STATUS.md`](PHASE_1_STATUS.md) and
+[`PHASE_2_STATUS.md`](PHASE_2_STATUS.md) for exactly what was built and
 tested versus what's still a placeholder.
 
 ## What works right now
@@ -20,17 +21,29 @@ tested versus what's still a placeholder.
 - Register/login with JWT auth (FastAPI + bcrypt + `python-jose`).
 - Create and list Git repository records, scoped per-user.
 - A Next.js dashboard that drives the API above.
-- A real pytest suite (9 tests) exercising auth and repository ownership
-  rules, run against an isolated in-memory database.
+- **Repository analysis**: `POST /api/repositories/{id}/analyze` clones a
+  repository with the real `git` binary and runs the `code_intelligence`
+  scanner against it — file tree analysis, AST-based symbol extraction
+  (Python and JavaScript; heuristic for TypeScript), dependency/framework
+  detection, API route and DB model detection, and a hybrid
+  semantic+keyword+symbol+path code search (see
+  [`code_intelligence/README.md`](code_intelligence/README.md)).
+- A real pytest suite: **14 tests** in `apps/api` (auth, repository
+  ownership, and the analyze/analysis endpoints against a real cloned
+  fixture repo) + **40 tests** in `code_intelligence` (language detection,
+  both AST extractors, the repository scanner, the import graph, the
+  embedding provider, the vector index, and hybrid search).
 
 ## What does not exist yet
 
-Repository indexing, AST/code intelligence, the LangGraph agent
-orchestrator, sandboxed tool execution, automated code review/security
-agents, Git branch/PR automation, observability, and the evaluation
-harness. These are Phases 2-10 of the roadmap below and are not
+The LangGraph agent orchestrator, sandboxed tool execution, automated code
+review/security agents, Git branch/PR automation, observability, and the
+evaluation harness. These are Phases 3-10 of the roadmap below and are not
 implemented — the corresponding directories (`agents/`, `core/`, `tools/`,
-`code_intelligence/`, `sandbox/`, `evaluation/`) are empty scaffolding.
+`sandbox/`, `evaluation/`) are empty scaffolding. A call graph (which
+function calls which) also doesn't exist yet — only file-level import
+relationships are resolved; see `PHASE_2_STATUS.md` for the full list of
+explicit gaps.
 
 ## Local development
 
@@ -47,6 +60,19 @@ uvicorn app.main:app --reload --port 8000
 
 By default the API points at `postgresql+psycopg://forgeai:forgeai@localhost:5432/forgeai`.
 For local development without Postgres running, set `DATABASE_URL=sqlite:///./dev.db`.
+
+The `/analyze` endpoint imports the standalone `code_intelligence` package
+from the repository root (see that package's README for why) and shells
+out to `git` — make sure `git` is on `PATH`.
+
+### code_intelligence (standalone)
+
+```bash
+cd code_intelligence
+python -m venv .venv && source .venv/Scripts/activate
+pip install -r requirements-dev.txt
+python -m pytest -v
+```
 
 ### Frontend
 
@@ -68,14 +94,16 @@ docker compose up --build
 
 This brings up Postgres, Redis, the API (port 8000), and the web app
 (port 3000). **Note:** this compose stack has not been exercised in this
-environment (no Docker daemon available here) — see `PHASE_1_STATUS.md`.
+environment (no Docker daemon available here), and its `api` image does
+not currently include `code_intelligence` in its build context, so
+`/analyze` would not work inside it as-is — see `PHASE_2_STATUS.md`.
 
 ## Environment variables
 
 See [`.env.example`](.env.example) for the full list (`DATABASE_URL`,
 `REDIS_URL`, `JWT_SECRET`, `CORS_ORIGINS`, `NEXT_PUBLIC_API_URL`, etc).
 
-## API surface (Phase 1)
+## API surface
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
@@ -85,11 +113,13 @@ See [`.env.example`](.env.example) for the full list (`DATABASE_URL`,
 | POST | `/api/repositories` | Bearer | Create a repository owned by the caller |
 | GET | `/api/repositories` | Bearer | List the caller's repositories |
 | GET | `/api/repositories/{id}` | Bearer | Fetch one repository (404 if not owned) |
+| POST | `/api/repositories/{id}/analyze` | Bearer | Clone + scan the repository; returns the analysis (COMPLETED or FAILED) |
+| GET | `/api/repositories/{id}/analysis` | Bearer | Fetch the most recent analysis (404 if none has run) |
 
 ## Roadmap
 
 1. **Foundation** — repo, FastAPI, Next.js, Postgres, Redis, Docker, auth, basic UI. ✅ done
-2. Repository intelligence — indexing, AST, symbol extraction, vector search.
+2. **Repository intelligence** — indexing, AST, symbol extraction, vector search. ✅ done
 3. Agent core — `AgentState`, tool framework, LangGraph, planner.
 4. Autonomous execution — sandboxed filesystem/terminal tools, patching, test runs.
 5. Self-correction — debugger, failure classification, iterative patch loop (max 5 iterations).
@@ -108,5 +138,4 @@ defenses land in later phases.
 ## Contributing
 
 This is an active build-out; see the phase status docs before assuming any
-capability beyond Phase 1 exists.
-"# autonomous-agentic-software-engineer" 
+capability beyond Phase 2 exists.
