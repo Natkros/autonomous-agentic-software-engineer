@@ -11,14 +11,15 @@ and [`AGENTS.md`](AGENTS.md).
 
 **This repository is being built incrementally, one phase at a time.**
 Only claim a feature works if the relevant phase's status doc says it was
-actually run and verified. Current status: **Phase 7 complete** — see
+actually run and verified. Current status: **Phase 8 complete** — see
 [`PHASE_1_STATUS.md`](PHASE_1_STATUS.md),
 [`PHASE_2_STATUS.md`](PHASE_2_STATUS.md),
 [`PHASE_3_STATUS.md`](PHASE_3_STATUS.md),
 [`PHASE_4_STATUS.md`](PHASE_4_STATUS.md),
 [`PHASE_5_STATUS.md`](PHASE_5_STATUS.md),
-[`PHASE_6_STATUS.md`](PHASE_6_STATUS.md), and
-[`PHASE_7_STATUS.md`](PHASE_7_STATUS.md) for exactly what was built and
+[`PHASE_6_STATUS.md`](PHASE_6_STATUS.md),
+[`PHASE_7_STATUS.md`](PHASE_7_STATUS.md), and
+[`PHASE_8_STATUS.md`](PHASE_8_STATUS.md) for exactly what was built and
 tested versus what's still a placeholder.
 
 ## What works right now
@@ -85,36 +86,52 @@ tested versus what's still a placeholder.
   `core/policies/approval.py`, a deterministic human-approval-request
   builder (spec section 27), and a real (network-gated, unverified)
   `GitHubPullRequestClient`. See [`PHASE_7_STATUS.md`](PHASE_7_STATUS.md).
-- A real pytest suite, **235 tests total**, run in this session and
+- **Evaluation harness** (`evaluation/`): a real benchmark runner that
+  copies a fixture repo, runs the actual Phase 3 Repository Explorer
+  Agent and Phase 5 self-correction loop against it, and checks whether
+  the result matches a predicted outcome. **Read this before quoting a
+  number from it**: since `MockLLMProvider` can't produce real
+  functionality, "success rate" here measures whether the
+  self-correction mechanism converges the way it should for a given
+  scenario type (safe patch -> quick success; unsolvable test -> bounded
+  give-up) — not whether any coding task was actually solved. Also adds
+  `core/providers/cost_tracker.py`: token/cost/latency tracking with a
+  documented rough heuristic (not a real tokenizer) and illustrative
+  pricing; mock calls are tracked at exactly $0.00 since they're not real
+  API calls. See [`PHASE_8_STATUS.md`](PHASE_8_STATUS.md).
+- A real pytest suite, **246 tests total**, run in this session and
   double-checked in clean Python 3.12 virtual environments matching CI
   (not just the pre-warmed shared dev venv — see `PHASE_5_STATUS.md` for
-  why that distinction matters, including a real CI-only bug it caught):
-  `code_intelligence` (40), `core` (41), `sandbox` (12), `tools` (94),
-  `agents` (28), `apps/api` (20), plus the frontend build.
+  why that distinction matters, including real CI-only bugs it caught in
+  Phases 5 and 7): `code_intelligence` (40), `core` (47), `sandbox` (12),
+  `tools` (95), `agents` (28), `evaluation` (4), `apps/api` (20), plus
+  the frontend build.
 
 ## What does not exist yet
 
-Observability and the evaluation harness (Phases 8-10). The corresponding
-agent directories (`agents/architecture`, `agents/tester`,
-`agents/documentation`, `agents/validator`) and `evaluation/` are empty
-scaffolding. The agent pipeline (`core/orchestration/graph.py`, used by
-`/api/tasks`) does not yet call the self-correction loop, the Phase 4
-tools, the Phase 6 review/security agents, or the Phase 7 git/approval
-tools — it still stops after the Coding Agent proposes a patch.
-`MockLLMProvider`'s patch content is a deterministic heuristic stub (a
-valid-but-trivial function), never a real fix — the self-correction loop
-proves the *retry mechanism* is bounded and correct, not that any AI is
-meaningfully debugging code (see `PHASE_5_STATUS.md`). The static
-analysis and secret scanning are original, dependency-free
-implementations covering a deliberately small rule set — not a wrapper
-around a real tool like Semgrep/Bandit/Gitleaks. No pull request has ever
-actually been opened — `GitHubPullRequestClient` is real, complete code
-that has never been run against the live GitHub API here (no network/
-token in this environment). A call graph (which function calls which)
-also doesn't exist yet — only file-level import relationships are
-resolved. See each phase's status doc for the full list of explicit gaps,
-including that no real LLM call has ever been made in this environment
-and Docker sandboxing has never been run against a live daemon here.
+Observability and production deployment tooling (Phases 9-10). The
+corresponding agent directories (`agents/architecture`, `agents/tester`,
+`agents/documentation`, `agents/validator`) are empty scaffolding. The
+agent pipeline (`core/orchestration/graph.py`, used by `/api/tasks`) does
+not yet call the self-correction loop, the Phase 4 tools, the Phase 6
+review/security agents, or the Phase 7 git/approval tools — it still
+stops after the Coding Agent proposes a patch. `MockLLMProvider`'s patch
+content is a deterministic heuristic stub (a valid-but-trivial function),
+never a real fix — the self-correction loop and the evaluation harness
+built on top of it prove the *retry mechanism* is bounded and correct,
+not that any AI is meaningfully debugging or solving code (see
+`PHASE_5_STATUS.md`/`PHASE_8_STATUS.md`). The static analysis and secret
+scanning are original, dependency-free implementations covering a
+deliberately small rule set — not a wrapper around a real tool like
+Semgrep/Bandit/Gitleaks. No pull request has ever actually been opened —
+`GitHubPullRequestClient` is real, complete code that has never been run
+against the live GitHub API here (no network/token in this environment).
+Cost tracking is not wired into any LLM call or pipeline run yet. A call
+graph (which function calls which) also doesn't exist yet — only
+file-level import relationships are resolved. See each phase's status doc
+for the full list of explicit gaps, including that no real LLM call has
+ever been made in this environment and Docker sandboxing has never been
+run against a live daemon here.
 
 ## Local development
 
@@ -148,16 +165,19 @@ cd code_intelligence && python -m venv .venv && source .venv/Scripts/activate
 pip install -r requirements-dev.txt && python -m pytest -v   # 40 passed
 
 cd ../core && python -m venv .venv && source .venv/Scripts/activate
-pip install -r requirements-dev.txt && python -m pytest -v   # 41 passed
+pip install -r requirements-dev.txt && python -m pytest -v   # 47 passed
 
 cd ../sandbox && python -m venv .venv && source .venv/Scripts/activate
 pip install -r requirements-dev.txt && python -m pytest -v   # 12 passed
 
 cd ../tools && python -m venv .venv && source .venv/Scripts/activate
-pip install -r requirements-dev.txt && python -m pytest -v   # 94 passed
+pip install -r requirements-dev.txt && python -m pytest -v   # 95 passed
 
 cd ../agents && python -m venv .venv && source .venv/Scripts/activate
 pip install -r requirements-dev.txt && python -m pytest -v   # 28 passed
+
+cd ../evaluation && python -m venv .venv && source .venv/Scripts/activate
+pip install -r requirements-dev.txt && python -m pytest -v   # 4 passed
 ```
 
 ### Frontend
@@ -215,7 +235,7 @@ See [`.env.example`](.env.example) for the full list (`DATABASE_URL`,
 5. **Self-correction** — debugger, failure classification, iterative patch loop (max 5 iterations). ✅ done (mechanism verified; patch *quality* still depends on `MockLLMProvider`'s heuristic — see `PHASE_5_STATUS.md`)
 6. **Code review** — static analysis, security scanning. ✅ done (real, deterministic checks; not wired into the pipeline yet — see `PHASE_6_STATUS.md`)
 7. **Git automation** — branches, commits, diffs, PRs, approval workflow. ✅ done (branch/commit/push verified against real local repos; PR creation is real, unverified code — see `PHASE_7_STATUS.md`)
-8. Evaluation — benchmark tasks, success metrics, cost tracking.
+8. **Evaluation** — benchmark tasks, success metrics, cost tracking. ✅ done (measures mechanism convergence, not coding correctness — see `PHASE_8_STATUS.md`)
 9. Observability — OpenTelemetry, Prometheus, Grafana.
 10. Production deployment — CI/CD, secrets management, monitoring.
 
@@ -232,4 +252,4 @@ are still not implemented.
 ## Contributing
 
 This is an active build-out; see the phase status docs before assuming any
-capability beyond Phase 7 exists.
+capability beyond Phase 8 exists.

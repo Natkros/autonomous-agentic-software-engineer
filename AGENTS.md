@@ -1,13 +1,15 @@
 # Agent Roles
 
 This describes the multi-agent design ForgeAI is built toward. As of
-Phase 7, seven of these agents are real, tested, working code
+Phase 8, seven of these agents are real, tested, working code
 (`agents/requirement`, `agents/repository`, `agents/planner`,
 `agents/coder`, `agents/debugger`, `agents/security`, `agents/reviewer` —
 see `PHASE_3_STATUS.md`, `PHASE_5_STATUS.md`, and `PHASE_6_STATUS.md`).
-Phase 7 (git automation) added no new agent role — per the spec, it's
-tool-based (`tools/git`) plus a policy function
-(`core/policies/approval.py`), not a distinct agent. The remaining four
+Phases 7 (git automation) and 8 (evaluation) added no new agent role —
+per the spec, both are infrastructure (`tools/git`,
+`core/policies/approval.py`, `evaluation/`) that *exercises* the existing
+agents (particularly the Repository Explorer and the self-correction
+loop's Coder/Debugger), not new agents themselves. The remaining four
 agent roles still hold only empty placeholder directories under
 `agents/`.
 

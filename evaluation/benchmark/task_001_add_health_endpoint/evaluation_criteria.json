@@ -1,0 +1,4 @@
+{
+  "expected_status": "success",
+  "description": "A purely additive patch should not break the existing passing test suite, so the self-correction loop should report success on the first iteration."
+}

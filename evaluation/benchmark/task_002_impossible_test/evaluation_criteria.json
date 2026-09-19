@@ -1,0 +1,4 @@
+{
+  "expected_status": "needs_human_intervention",
+  "description": "No additive patch can make an unconditional assert False pass; the loop must exhaust its iteration budget and hand off to a human."
+}

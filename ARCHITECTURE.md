@@ -66,7 +66,7 @@ but is unverified (no live daemon in this environment — see
                  Final Validator -> Human Approval -> Git PR
 ```
 
-## What exists today (Phases 1-7)
+## What exists today (Phases 1-8)
 
 - `apps/api` — FastAPI backend with JWT authentication (register/login),
   role-based `User` model, `Repository` CRUD scoped to the owner, a
@@ -102,8 +102,12 @@ but is unverified (no live daemon in this environment — see
   test -> debug -> patch -> retest loop (max 5 iterations, verified to
   never exceed its cap); and, new in Phase 7,
   `core/policies/approval.py` — a deterministic human-approval-request
-  builder (spec section 27), never an LLM's judgment call. 41/41 tests
-  pass.
+  builder (spec section 27), never an LLM's judgment call; and, new in
+  Phase 8, `core/providers/cost_tracker.py` — token/cost/latency tracking
+  with a documented rough heuristic (~4 chars/token, not a real
+  tokenizer) and illustrative real pricing for one model; `MockLLMProvider`
+  calls are tracked at exactly $0.00 since they are not real API calls.
+  47/47 tests pass.
 - `tools` — the controlled `Tool` interface (permission-checked,
   timed, audit-logged on every call). Three READ_ONLY tools wrapping
   `code_intelligence` (`repository.analyze`, `code.search`,
@@ -127,7 +131,11 @@ but is unverified (no live daemon in this environment — see
   repository (`git.push` against a real local bare remote, independently
   re-verified by reading the bare repo's own log); and
   `GitHubPullRequestClient`, real PR-creation code, unverified (no
-  network/token here). 94/94 tests pass, including a real end-to-end
+  network/token here). `git.commit` always sets an explicit git identity
+  via environment variables rather than relying on the host's global
+  config — a real bug this fixed after CI (which has no global git
+  config, unlike local dev here) failed with "Please tell me who you
+  are." 95/95 tests pass, including a real end-to-end
   apply-a-patch-then-run-the-suite integration test.
 - `sandbox` — a `Sandbox` interface: `LocalProcessSandbox` (real, tested,
   no true isolation — see `sandbox/README.md`) and `DockerSandbox` (real,
@@ -152,6 +160,17 @@ but is unverified (no live daemon in this environment — see
   stub patches as unimplemented. 28/28 tests pass. The other four agent
   roles (architecture, test-generation, documentation, validator) remain
   empty placeholders.
+- `evaluation` — a standalone Python package (Phase 8): two real
+  benchmark tasks under `evaluation/benchmark/`, each with a real fixture
+  repository, and `EvaluationRunner`, which actually runs the real Phase
+  3 Repository Explorer Agent and Phase 5 self-correction loop against
+  each one. **Read `evaluation/runner.py`'s module docstring (and
+  `PHASE_8_STATUS.md`) before quoting a "success rate" from this** — it
+  measures whether the self-correction mechanism's convergence behavior
+  matches a predicted outcome (quick success on a safe patch; bounded
+  give-up on an unsolvable one), not whether any coding task was actually
+  solved, since `MockLLMProvider` cannot produce real functionality.
+  4/4 tests pass.
 - `apps/api` also now exposes `POST /api/tasks` and `GET /api/tasks/{id}`,
   which clone a repository and run the full LangGraph pipeline
   (Requirement -> Repository -> Planner -> Coder) against it, storing the
@@ -163,30 +182,32 @@ but is unverified (no live daemon in this environment — see
   include `code_intelligence`/`core`/`agents`/`tools`/`sandbox` in its
   build context — see `PHASE_2_STATUS.md`/`PHASE_3_STATUS.md`.)
 - `.github/workflows/ci.yml` — runs `code_intelligence`, `core`,
-  `sandbox`, `tools`, `agents`, and `backend` pytest suites (each
-  installing its own `requirements-dev.txt` fresh, which is what caught a
+  `sandbox`, `tools`, `agents`, `evaluation`, and `backend` pytest suites
+  (each installing its own `requirements-dev.txt` fresh, which is what caught a
   real cross-package dependency gap during Phase 5 development — see
   `PHASE_5_STATUS.md`), plus a frontend production build, on every
   push/PR.
 
-## What is scaffolded but not implemented (Phase 8+)
+## What is scaffolded but not implemented (Phase 9+)
 
-`agents/architecture`, `agents/tester`, `agents/documentation`,
-`agents/validator`, and `evaluation/` are currently empty directories
-(holding a `.gitkeep`) that reserve the shape described in the roadmap.
-None of the test-generation, documentation-sync, final-validation, or
-evaluation harness exists yet. Do not assume any code there works until a
-later phase's status doc says so. (`code_intelligence/`, `core/`,
+`agents/architecture`, `agents/tester`, `agents/documentation`, and
+`agents/validator` are currently empty directories (holding a
+`.gitkeep`) that reserve the shape described in the roadmap. None of the
+test-generation, documentation-sync, or final-validation logic exists
+yet. Do not assume any code there works until a later phase's status doc
+says so. (`code_intelligence/`, `core/`,
 `agents/{requirement,repository,planner,coder,debugger,security,reviewer}`,
-`tools/`, and `sandbox/` are no longer placeholders — see above. Note the
-agent pipeline (`core/orchestration/graph.py`, used by `/api/tasks`) does
-NOT call `core/orchestration/self_correction.py`, `SecurityAgent`,
-`CodeReviewAgent`, or any `tools/git` tool yet — each exists and is
-tested as a standalone, callable component, but wiring them into the API
-pipeline was deliberately left for a separate, reviewable change — see
+`tools/`, `sandbox/`, and `evaluation/` are no longer placeholders — see
+above. Note the agent pipeline (`core/orchestration/graph.py`, used by
+`/api/tasks`) does NOT call `core/orchestration/self_correction.py`,
+`SecurityAgent`, `CodeReviewAgent`, or any `tools/git` tool yet — each
+exists and is tested as a standalone, callable component, but wiring
+them into the API pipeline was deliberately left for a separate,
+reviewable change — see
 `PHASE_5_STATUS.md`/`PHASE_6_STATUS.md`/`PHASE_7_STATUS.md`. No pull
 request has ever actually been opened against a real repository by this
-project's own code.)
+project's own code, and no evaluation benchmark measures coding
+correctness yet — see `PHASE_8_STATUS.md`.)
 
 ## Database schema (Phase 1 subset)
 

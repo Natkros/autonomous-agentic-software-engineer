@@ -1,0 +1,2 @@
+-r ../core/requirements.txt
+-r ../code_intelligence/requirements.txt
