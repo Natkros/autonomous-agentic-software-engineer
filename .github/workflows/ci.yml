@@ -161,9 +161,15 @@ jobs:
           openssl req -x509 -newkey rsa:2048 -nodes \
             -keyout /tmp/certs/key.pem -out /tmp/certs/cert.pem \
             -days 1 -subj "/CN=localhost"
+          # nginx:alpine runs nginx as a non-root user; openssl's default
+          # file permissions (key.pem is not world-readable) block that
+          # user from reading a bind-mounted key created by the runner's
+          # own (different) user. World-readable is fine for a
+          # throwaway cert that lives only for this CI step.
+          chmod a+r /tmp/certs/key.pem /tmp/certs/cert.pem
       - name: nginx -t
         run: |
-          docker run --rm \
+          docker run --rm --user root \
             -v "$(pwd)/infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \
             -v "/tmp/certs:/etc/nginx/certs:ro" \
-            nginx:alpine nginx -t
+            nginx:alpine sh -c "ls -la /etc/nginx/certs && nginx -t"
