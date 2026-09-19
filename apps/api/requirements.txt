@@ -1,6 +1,6 @@
 fastapi==0.118.0
 uvicorn[standard]==0.34.0
-sqlalchemy==2.0.36
+sqlalchemy==2.0.54
 pydantic==2.13.5
 pydantic-settings==2.7.0
 python-jose[cryptography]==3.3.0
@@ -13,3 +13,4 @@ alembic==1.14.0
 email-validator==2.2.0
 esprima==4.0.1
 qdrant-client==1.12.1
+langgraph==1.2.11

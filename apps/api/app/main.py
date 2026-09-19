@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import auth, health, repositories
+from app.api.routes import auth, health, repositories, tasks
 from app.config import get_settings
 from app.database import Base, engine
 
@@ -33,6 +33,7 @@ app.add_middleware(
 app.include_router(health.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(repositories.router, prefix="/api")
+app.include_router(tasks.router, prefix="/api")
 
 
 @app.exception_handler(HTTPException)

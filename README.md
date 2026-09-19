@@ -11,9 +11,10 @@ and [`AGENTS.md`](AGENTS.md).
 
 **This repository is being built incrementally, one phase at a time.**
 Only claim a feature works if the relevant phase's status doc says it was
-actually run and verified. Current status: **Phase 2 complete** — see
-[`PHASE_1_STATUS.md`](PHASE_1_STATUS.md) and
-[`PHASE_2_STATUS.md`](PHASE_2_STATUS.md) for exactly what was built and
+actually run and verified. Current status: **Phase 3 complete** — see
+[`PHASE_1_STATUS.md`](PHASE_1_STATUS.md),
+[`PHASE_2_STATUS.md`](PHASE_2_STATUS.md), and
+[`PHASE_3_STATUS.md`](PHASE_3_STATUS.md) for exactly what was built and
 tested versus what's still a placeholder.
 
 ## What works right now
@@ -28,22 +29,33 @@ tested versus what's still a placeholder.
   detection, API route and DB model detection, and a hybrid
   semantic+keyword+symbol+path code search (see
   [`code_intelligence/README.md`](code_intelligence/README.md)).
-- A real pytest suite: **14 tests** in `apps/api` (auth, repository
-  ownership, and the analyze/analysis endpoints against a real cloned
-  fixture repo) + **40 tests** in `code_intelligence` (language detection,
-  both AST extractors, the repository scanner, the import graph, the
-  embedding provider, the vector index, and hybrid search).
+- **Agent pipeline**: `POST /api/tasks` clones a repository and runs a real,
+  compiled **LangGraph** state machine — Requirement Analyst -> Repository
+  Explorer -> Planner -> Coder — producing a validated task plan and
+  candidate patch proposals (proposals only; nothing is written to disk
+  yet). Every agent output is a schema-validated Pydantic model flowing
+  through one explicit `AgentState`, not hidden conversational context.
+  The LLM layer defaults to a deterministic offline provider
+  (`MockLLMProvider`) unless `ANTHROPIC_API_KEY` is set — see
+  [`PHASE_3_STATUS.md`](PHASE_3_STATUS.md) for exactly what that does and
+  doesn't mean about output quality.
+- A real pytest suite, **105 tests total**, run in this session:
+  `code_intelligence` (40), `core` (24), `tools` (12), `agents` (9),
+  `apps/api` (20).
 
 ## What does not exist yet
 
-The LangGraph agent orchestrator, sandboxed tool execution, automated code
+Sandboxed tool execution, self-correction/debugging loops, automated code
 review/security agents, Git branch/PR automation, observability, and the
-evaluation harness. These are Phases 3-10 of the roadmap below and are not
-implemented — the corresponding directories (`agents/`, `core/`, `tools/`,
-`sandbox/`, `evaluation/`) are empty scaffolding. A call graph (which
-function calls which) also doesn't exist yet — only file-level import
-relationships are resolved; see `PHASE_2_STATUS.md` for the full list of
-explicit gaps.
+evaluation harness. These are Phases 4-10 of the roadmap below and are not
+implemented — the corresponding agent directories (`agents/architecture`,
+`agents/tester`, `agents/debugger`, `agents/reviewer`, `agents/security`,
+`agents/documentation`, `agents/validator`) and `sandbox/`/`evaluation/`
+are empty scaffolding. A call graph (which function calls which) also
+doesn't exist yet — only file-level import relationships are resolved.
+See `PHASE_2_STATUS.md` and `PHASE_3_STATUS.md` for the full list of
+explicit gaps, including that no real LLM call has ever been made in this
+environment (no network/API key here).
 
 ## Local development
 
@@ -61,17 +73,29 @@ uvicorn app.main:app --reload --port 8000
 By default the API points at `postgresql+psycopg://forgeai:forgeai@localhost:5432/forgeai`.
 For local development without Postgres running, set `DATABASE_URL=sqlite:///./dev.db`.
 
-The `/analyze` endpoint imports the standalone `code_intelligence` package
-from the repository root (see that package's README for why) and shells
-out to `git` — make sure `git` is on `PATH`.
+The `/analyze` and `/tasks` endpoints import the standalone `code_intelligence`,
+`core`, `agents`, and `tools` packages from the repository root (see each
+package's README for why) and shell out to `git` — make sure `git` is on
+`PATH`. Set `ANTHROPIC_API_KEY` to use real LLM calls instead of the
+deterministic offline `MockLLMProvider`; without it, `/tasks` still runs
+end-to-end using the mock.
 
-### code_intelligence (standalone)
+### Standalone packages
+
+Each of these can be installed and tested independently of the API:
 
 ```bash
-cd code_intelligence
-python -m venv .venv && source .venv/Scripts/activate
-pip install -r requirements-dev.txt
-python -m pytest -v
+cd code_intelligence && python -m venv .venv && source .venv/Scripts/activate
+pip install -r requirements-dev.txt && python -m pytest -v   # 40 passed
+
+cd ../core && python -m venv .venv && source .venv/Scripts/activate
+pip install -r requirements-dev.txt && python -m pytest -v   # 24 passed
+
+cd ../tools && python -m venv .venv && source .venv/Scripts/activate
+pip install -r requirements-dev.txt && python -m pytest -v   # 12 passed
+
+cd ../agents && python -m venv .venv && source .venv/Scripts/activate
+pip install -r requirements-dev.txt && python -m pytest -v   # 9 passed
 ```
 
 ### Frontend
@@ -95,13 +119,15 @@ docker compose up --build
 This brings up Postgres, Redis, the API (port 8000), and the web app
 (port 3000). **Note:** this compose stack has not been exercised in this
 environment (no Docker daemon available here), and its `api` image does
-not currently include `code_intelligence` in its build context, so
-`/analyze` would not work inside it as-is — see `PHASE_2_STATUS.md`.
+not currently include `code_intelligence`/`core`/`agents`/`tools` in its
+build context, so `/analyze` and `/tasks` would not work inside it as-is
+— see `PHASE_2_STATUS.md`/`PHASE_3_STATUS.md`.
 
 ## Environment variables
 
 See [`.env.example`](.env.example) for the full list (`DATABASE_URL`,
 `REDIS_URL`, `JWT_SECRET`, `CORS_ORIGINS`, `NEXT_PUBLIC_API_URL`, etc).
+`ANTHROPIC_API_KEY` is optional — see above.
 
 ## API surface
 
@@ -115,12 +141,14 @@ See [`.env.example`](.env.example) for the full list (`DATABASE_URL`,
 | GET | `/api/repositories/{id}` | Bearer | Fetch one repository (404 if not owned) |
 | POST | `/api/repositories/{id}/analyze` | Bearer | Clone + scan the repository; returns the analysis (COMPLETED or FAILED) |
 | GET | `/api/repositories/{id}/analysis` | Bearer | Fetch the most recent analysis (404 if none has run) |
+| POST | `/api/tasks` | Bearer | Clone the repository and run the agent pipeline against a natural-language request |
+| GET | `/api/tasks/{id}` | Bearer | Fetch a task run's stored result |
 
 ## Roadmap
 
 1. **Foundation** — repo, FastAPI, Next.js, Postgres, Redis, Docker, auth, basic UI. ✅ done
 2. **Repository intelligence** — indexing, AST, symbol extraction, vector search. ✅ done
-3. Agent core — `AgentState`, tool framework, LangGraph, planner.
+3. **Agent core** — `AgentState`, tool framework, LangGraph, planner, repository agent, coding agent. ✅ done
 4. Autonomous execution — sandboxed filesystem/terminal tools, patching, test runs.
 5. Self-correction — debugger, failure classification, iterative patch loop (max 5 iterations).
 6. Code review — static analysis, security scanning.
@@ -132,10 +160,11 @@ See [`.env.example`](.env.example) for the full list (`DATABASE_URL`,
 ## Security model
 
 See [`ARCHITECTURE.md`](ARCHITECTURE.md#security-model-phase-1-subset) for
-what's enforced today. Full RBAC, sandboxing, and prompt-injection
-defenses land in later phases.
+what's enforced today, and [`PHASE_3_STATUS.md`](PHASE_3_STATUS.md) for the
+new permission-level/autonomy-level system. Sandboxed execution and
+prompt-injection defenses land in Phase 4+.
 
 ## Contributing
 
 This is an active build-out; see the phase status docs before assuming any
-capability beyond Phase 2 exists.
+capability beyond Phase 3 exists.

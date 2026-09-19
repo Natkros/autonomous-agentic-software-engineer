@@ -6,6 +6,11 @@ which parts of it exist today versus which are placeholders for a later phase.
 
 ## Target system
 
+As of Phase 3, the top half of this diagram — from USER down through the
+Requirement/Repository/Planning agents to a proposed patch — is real,
+running code (see "What exists today" below). Everything from the
+Execution Agent / Docker Sandbox downward is still Phase 4+.
+
 ```
                     USER
                       |
@@ -54,7 +59,7 @@ which parts of it exist today versus which are placeholders for a later phase.
                  Final Validator -> Human Approval -> Git PR
 ```
 
-## What exists today (Phases 1-2)
+## What exists today (Phases 1-3)
 
 - `apps/api` — FastAPI backend with JWT authentication (register/login),
   role-based `User` model, `Repository` CRUD scoped to the owner, a
@@ -78,22 +83,48 @@ which parts of it exist today versus which are placeholders for a later phase.
   real `git` binary and run the `code_intelligence` scanner against it,
   storing the result in a new `repository_analyses` table. Verified
   end-to-end against a real, freshly-`git init`'d local fixture repo.
+- `core` — `AgentState` (an explicit, JSON-serializable TypedDict) and
+  Pydantic schemas for every agent artifact; an `LLMProvider` abstraction
+  (`MockLLMProvider`, real deterministic/offline and actually exercised by
+  the test suite; `AnthropicLLMProvider`, real code, unverified — no
+  network/key here); the five-tier `PermissionLevel` / six-tier
+  `AutonomyLevel` policy engine; and `core/orchestration/graph.py`, a real
+  compiled **LangGraph** `StateGraph`. 24/24 tests pass.
+- `tools` — the controlled `Tool` interface (permission-checked,
+  timed, audit-logged on every call) plus three real READ_ONLY tools
+  wrapping `code_intelligence`: `repository.analyze`, `code.search`,
+  `symbol.search`. 12/12 tests pass.
+- `agents` — four working agents: `RequirementAnalystAgent`,
+  `RepositoryExplorerAgent` (no LLM needed — wraps Phase 2's scanner),
+  `PlanningAgent` (validates its own output has no dangling task
+  dependencies), and `CodingAgent` (proposes patches; never applies them).
+  9/9 tests pass. The other seven agent roles (architecture, test, debug,
+  review, security, documentation, validator) remain empty placeholders.
+- `apps/api` also now exposes `POST /api/tasks` and `GET /api/tasks/{id}`,
+  which clone a repository and run the full LangGraph pipeline
+  (Requirement -> Repository -> Planner -> Coder) against it, storing the
+  result in a new `tasks` table. Verified end-to-end against a real cloned
+  fixture repo, using `MockLLMProvider` (no API key configured here).
 - `docker-compose.yml` + `infrastructure/docker/*.Dockerfile` — Postgres,
   Redis, API, and web services wired together for local/prod-like runs.
   (Not yet exercised in this session, and the `api` image does not yet
-  include `code_intelligence` in its build context — see
-  `PHASE_2_STATUS.md`.)
-- `.github/workflows/ci.yml` — runs `code_intelligence` tests, backend
-  pytest, and a frontend production build on every push/PR.
+  include `code_intelligence`/`core`/`agents`/`tools` in its build context
+  — see `PHASE_2_STATUS.md`/`PHASE_3_STATUS.md`.)
+- `.github/workflows/ci.yml` — runs `code_intelligence`, `core`, `tools`,
+  `agents`, and `backend` pytest suites, plus a frontend production build,
+  on every push/PR.
 
-## What is scaffolded but not implemented (Phase 3+)
+## What is scaffolded but not implemented (Phase 4+)
 
-Everything under `agents/`, `core/`, `tools/`, `sandbox/`, and
-`evaluation/` is currently an empty directory (holding a `.gitkeep`) that
-reserves the shape described in the roadmap. None of the LangGraph
-orchestration, sandboxed tool execution, or evaluation harness exists yet.
-Do not assume any code there works until a later phase's status doc says
-so. (`code_intelligence/` is no longer a placeholder — see above.)
+`agents/architecture`, `agents/tester`, `agents/debugger`,
+`agents/reviewer`, `agents/security`, `agents/documentation`,
+`agents/validator`, `sandbox/`, and `evaluation/` are currently empty
+directories (holding a `.gitkeep`) that reserve the shape described in the
+roadmap. None of the sandboxed tool execution, self-correction loop,
+review/security scanning, or evaluation harness exists yet. Do not assume
+any code there works until a later phase's status doc says so.
+(`code_intelligence/`, `core/`, `agents/{requirement,repository,planner,coder}`,
+and `tools/{base.py,search/}` are no longer placeholders — see above.)
 
 ## Database schema (Phase 1 subset)
 
@@ -121,18 +152,29 @@ repository_analyses
   summary         json NULL   -- the code_intelligence scan result
   error_message   text NULL
   created_at      timestamptz NOT NULL
+
+tasks
+  id                    varchar(36) PK
+  repository_id         varchar(36) FK -> repositories.id NOT NULL
+  user_request          text NOT NULL
+  status                enum(COMPLETED, FAILED) NOT NULL
+  requirement_analysis  json NULL   -- RequirementAnalysis.model_dump()
+  repository_summary    json NULL   -- RepositorySummary.model_dump()
+  plan                  json NULL   -- [Task.model_dump(), ...]
+  patch_proposals       json NULL   -- [PatchProposal.model_dump(), ...]
+  errors                json NULL
+  created_at            timestamptz NOT NULL
 ```
 
-Later phases add `repository_files`, `repository_symbols`, `tasks`,
-`task_steps`, `agent_runs`, `tool_calls`, `code_changes`, `test_runs`,
-`test_results`, `security_findings`, `approvals`, `evaluations`, and
-`audit_logs` per the full schema in the project spec — none of these
-exist in the database yet. (`repository_analyses` above stands in for a
-lightweight version of `repository_files`/`repository_symbols` for now,
-storing the whole scan as one JSON blob rather than normalized rows — a
-simplification worth revisiting once other phases need to query
-individual symbols directly rather than through `code_intelligence`'s own
-API.)
+Later phases add `repository_files`, `repository_symbols`, `task_steps`,
+`agent_runs`, `tool_calls`, `code_changes`, `test_runs`, `test_results`,
+`security_findings`, `approvals`, `evaluations`, and `audit_logs` per the
+full schema in the project spec — none of these exist in the database
+yet. `repository_analyses` and `tasks` above each stand in for a
+lightweight version of the fuller normalized schema, storing whole
+results as JSON blobs rather than normalized rows — a simplification
+worth revisiting once other phases need to query individual symbols,
+tasks, or tool calls directly rather than through one JSON column.
 
 ## Error format
 
@@ -157,7 +199,11 @@ All API errors are returned as:
   returns 404, not 403, to avoid leaking existence.
 - CORS origins are explicit allow-list via `CORS_ORIGINS`, not `*`.
 
-RBAC enforcement beyond "own vs. not-own", sandboxed execution, the
-permission-level system (`READ_ONLY`/`SAFE_WRITE`/`EXECUTION`/`GIT_WRITE`/
-`DEPLOYMENT`), and prompt-injection defenses are Phase 3+ work and are not
-implemented yet.
+RBAC enforcement beyond "own vs. not-own" and prompt-injection defenses
+are still not implemented. The permission-level system now exists
+(`core/policies/permissions.py`: `READ_ONLY`/`SAFE_WRITE`/`EXECUTION`/
+`GIT_WRITE`/`DEPLOYMENT`, gated by a 0-5 `AutonomyLevel`, with
+`DEPLOYMENT` always requiring human approval) and is enforced by every
+`Tool.run()` call — but sandboxed execution of anything above READ_ONLY
+doesn't exist yet, so in practice only the three READ_ONLY search tools
+can currently run at all.
