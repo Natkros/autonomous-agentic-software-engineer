@@ -55,6 +55,25 @@ This is the final phase of the original 10-phase roadmap.
   clean Python 3.12 venvs matching CI, plus two new CI-only checks
   (Docker build/smoke-test, nginx config validation) that cannot be
   reproduced in local dev here at all.
+- [x] **A real CI bug found and fixed in `nginx-config-check`, unrelated
+  to the cause first suspected.** The job failed with only a generic
+  "exit code 1" available (raw job logs require admin rights on this
+  repo via unauthenticated API access, so the true error text was never
+  directly visible). Two fix attempts aimed at certificate file
+  permissions (`chmod a+r` on the host-generated cert, then generating
+  the cert entirely inside the container to remove the host/container
+  permission boundary altogether) both still failed — proving the real
+  cause was something else. Reading `infrastructure/nginx/nginx.conf`
+  directly surfaced it: nginx resolves each `upstream { server ...; }`
+  hostname at config **load** time, and this config's `api`/`web`
+  upstreams are real `docker-compose` service names that only resolve
+  inside that compose network. Standing up `nginx:alpine` alone in a CI
+  step gives it nothing to resolve those names to, so `nginx -t` fails
+  with "host not found in upstream" — nothing to do with certificates at
+  all. Fixed with `--add-host api:127.0.0.1 --add-host web:127.0.0.1` on
+  the `docker run` invocation, which only needs the names to resolve for
+  a syntax check, not to actually be reachable. Verified by a subsequent
+  green CI run (all 10 jobs passing) after the fix landed.
 
 ## Explicitly NOT done in Phase 10
 
