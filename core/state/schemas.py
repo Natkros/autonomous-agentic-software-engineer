@@ -207,3 +207,36 @@ class SecurityScanResult(BaseModel):
     @property
     def blocks_finalization(self) -> bool:
         return any(f.severity in _BLOCKING_SEVERITIES for f in self.findings)
+
+
+class ApprovalStatus(str, enum.Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class ApprovalRequest(BaseModel):
+    """The human-in-the-loop approval prompt described in spec section 27:
+    reason, files affected, commands to run, and a risk level, presented
+    for a human to approve/reject/modify before a GIT_WRITE-or-above
+    action proceeds. Built by `core/policies/approval.py`, never by an
+    LLM — whether approval is required is a deterministic function of
+    permission level and autonomy level, not a judgment call.
+    """
+
+    action: str
+    reason: str
+    files_affected: list[str] = Field(default_factory=list)
+    commands: list[str] = Field(default_factory=list)
+    risk_level: Severity
+    status: ApprovalStatus = ApprovalStatus.PENDING
+
+
+class GitCommitRecord(BaseModel):
+    sha: str
+    message: str
+
+
+class GitStatusEntry(BaseModel):
+    path: str
+    status_code: str  # raw two-character porcelain code, e.g. "M ", "??", "A "

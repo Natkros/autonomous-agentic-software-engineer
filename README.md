@@ -11,13 +11,14 @@ and [`AGENTS.md`](AGENTS.md).
 
 **This repository is being built incrementally, one phase at a time.**
 Only claim a feature works if the relevant phase's status doc says it was
-actually run and verified. Current status: **Phase 6 complete** — see
+actually run and verified. Current status: **Phase 7 complete** — see
 [`PHASE_1_STATUS.md`](PHASE_1_STATUS.md),
 [`PHASE_2_STATUS.md`](PHASE_2_STATUS.md),
 [`PHASE_3_STATUS.md`](PHASE_3_STATUS.md),
 [`PHASE_4_STATUS.md`](PHASE_4_STATUS.md),
-[`PHASE_5_STATUS.md`](PHASE_5_STATUS.md), and
-[`PHASE_6_STATUS.md`](PHASE_6_STATUS.md) for exactly what was built and
+[`PHASE_5_STATUS.md`](PHASE_5_STATUS.md),
+[`PHASE_6_STATUS.md`](PHASE_6_STATUS.md), and
+[`PHASE_7_STATUS.md`](PHASE_7_STATUS.md) for exactly what was built and
 tested versus what's still a placeholder.
 
 ## What works right now
@@ -75,36 +76,45 @@ tested versus what's still a placeholder.
   content and correctly flags `MockLLMProvider`'s own stub patches as
   unimplemented — a true finding about this project's current LLM layer,
   not a staged example. See [`PHASE_6_STATUS.md`](PHASE_6_STATUS.md).
-- A real pytest suite, **217 tests total**, run in this session and
+- **Git automation** (`tools/git`): real `git.status`/`git.diff`/`git.log`
+  (READ_ONLY) and `git.branch`/`git.commit`/`git.push` (GIT_WRITE) tools,
+  each tested against a real, freshly-initialized git repository —
+  `git.push` is verified against a real local **bare** repo acting as the
+  remote, with the test independently re-reading the bare repo's own log
+  to confirm the commit actually landed there. Plus
+  `core/policies/approval.py`, a deterministic human-approval-request
+  builder (spec section 27), and a real (network-gated, unverified)
+  `GitHubPullRequestClient`. See [`PHASE_7_STATUS.md`](PHASE_7_STATUS.md).
+- A real pytest suite, **235 tests total**, run in this session and
   double-checked in clean Python 3.12 virtual environments matching CI
   (not just the pre-warmed shared dev venv — see `PHASE_5_STATUS.md` for
   why that distinction matters, including a real CI-only bug it caught):
-  `code_intelligence` (40), `core` (37), `sandbox` (12), `tools` (80),
+  `code_intelligence` (40), `core` (41), `sandbox` (12), `tools` (94),
   `agents` (28), `apps/api` (20), plus the frontend build.
 
 ## What does not exist yet
 
-Git branch/PR automation, observability, and the evaluation harness.
-These are Phases 7-10 of the roadmap below and are not implemented — the
-corresponding agent directories (`agents/architecture`, `agents/tester`,
+Observability and the evaluation harness (Phases 8-10). The corresponding
+agent directories (`agents/architecture`, `agents/tester`,
 `agents/documentation`, `agents/validator`) and `evaluation/` are empty
 scaffolding. The agent pipeline (`core/orchestration/graph.py`, used by
 `/api/tasks`) does not yet call the self-correction loop, the Phase 4
-tools, or the new Phase 6 review/security agents — it still stops after
-the Coding Agent proposes a patch. `MockLLMProvider`'s patch content is a
-deterministic heuristic stub (a valid-but-trivial function), never a real
-fix — the self-correction loop proves the *retry mechanism* is bounded
-and correct, not that any AI is meaningfully debugging code (see
-`PHASE_5_STATUS.md`). The static analysis and secret scanning are
-original, dependency-free implementations covering a deliberately small
-rule set — not a wrapper around a real tool like Semgrep/Bandit/Gitleaks,
-and not checked against live vulnerability-database data (no network
-access to one here). A call graph (which function calls which) also
-doesn't exist yet — only file-level import relationships are resolved.
-See each phase's status doc for the full list of explicit gaps, including
-that no real LLM call has ever been made in this environment (no
-network/API key here) and Docker sandboxing has never been run against a
-live daemon here.
+tools, the Phase 6 review/security agents, or the Phase 7 git/approval
+tools — it still stops after the Coding Agent proposes a patch.
+`MockLLMProvider`'s patch content is a deterministic heuristic stub (a
+valid-but-trivial function), never a real fix — the self-correction loop
+proves the *retry mechanism* is bounded and correct, not that any AI is
+meaningfully debugging code (see `PHASE_5_STATUS.md`). The static
+analysis and secret scanning are original, dependency-free
+implementations covering a deliberately small rule set — not a wrapper
+around a real tool like Semgrep/Bandit/Gitleaks. No pull request has ever
+actually been opened — `GitHubPullRequestClient` is real, complete code
+that has never been run against the live GitHub API here (no network/
+token in this environment). A call graph (which function calls which)
+also doesn't exist yet — only file-level import relationships are
+resolved. See each phase's status doc for the full list of explicit gaps,
+including that no real LLM call has ever been made in this environment
+and Docker sandboxing has never been run against a live daemon here.
 
 ## Local development
 
@@ -138,13 +148,13 @@ cd code_intelligence && python -m venv .venv && source .venv/Scripts/activate
 pip install -r requirements-dev.txt && python -m pytest -v   # 40 passed
 
 cd ../core && python -m venv .venv && source .venv/Scripts/activate
-pip install -r requirements-dev.txt && python -m pytest -v   # 37 passed
+pip install -r requirements-dev.txt && python -m pytest -v   # 41 passed
 
 cd ../sandbox && python -m venv .venv && source .venv/Scripts/activate
 pip install -r requirements-dev.txt && python -m pytest -v   # 12 passed
 
 cd ../tools && python -m venv .venv && source .venv/Scripts/activate
-pip install -r requirements-dev.txt && python -m pytest -v   # 80 passed
+pip install -r requirements-dev.txt && python -m pytest -v   # 94 passed
 
 cd ../agents && python -m venv .venv && source .venv/Scripts/activate
 pip install -r requirements-dev.txt && python -m pytest -v   # 28 passed
@@ -204,7 +214,7 @@ See [`.env.example`](.env.example) for the full list (`DATABASE_URL`,
 4. **Autonomous execution** — sandboxed filesystem/terminal tools, patching, test runs. ✅ done (Docker isolation itself unverified — see `PHASE_4_STATUS.md`)
 5. **Self-correction** — debugger, failure classification, iterative patch loop (max 5 iterations). ✅ done (mechanism verified; patch *quality* still depends on `MockLLMProvider`'s heuristic — see `PHASE_5_STATUS.md`)
 6. **Code review** — static analysis, security scanning. ✅ done (real, deterministic checks; not wired into the pipeline yet — see `PHASE_6_STATUS.md`)
-7. Git automation — branches, commits, diffs, PRs, approval workflow.
+7. **Git automation** — branches, commits, diffs, PRs, approval workflow. ✅ done (branch/commit/push verified against real local repos; PR creation is real, unverified code — see `PHASE_7_STATUS.md`)
 8. Evaluation — benchmark tasks, success metrics, cost tracking.
 9. Observability — OpenTelemetry, Prometheus, Grafana.
 10. Production deployment — CI/CD, secrets management, monitoring.
@@ -222,4 +232,4 @@ are still not implemented.
 ## Contributing
 
 This is an active build-out; see the phase status docs before assuming any
-capability beyond Phase 6 exists.
+capability beyond Phase 7 exists.

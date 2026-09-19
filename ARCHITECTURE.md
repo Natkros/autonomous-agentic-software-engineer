@@ -6,16 +6,17 @@ which parts of it exist today versus which are placeholders for a later phase.
 
 ## Target system
 
-As of Phase 6, every agent box in this diagram down through Review Agent
-and Security Agent exists as real, running code, EXCEPT that nothing
-currently connects the Planning/Coding agents' output to the Execution
-Agent, the self-correction loop, or the Review/Security agents to the API
-pipeline — every one of them exists and is tested standalone (see "What
-exists today" below), but `core/orchestration/graph.py` (what
-`/api/tasks` actually calls) stops after producing a patch *proposal*.
-Docker Sandbox exists as real code but is unverified (no live daemon in
-this environment — see `sandbox/README.md`). Final Validator and Git PR
-automation are still Phase 7+.
+As of Phase 7, every box in this diagram except Final Validator exists as
+real, running code (the Git Tool box now includes branch/commit/push and
+a real, unverified PR-creation client), EXCEPT that nothing currently
+connects the Planning/Coding agents' output to the Execution Agent, the
+self-correction loop, the Review/Security agents, or the git/approval
+tools to the API pipeline — every one of them exists and is tested
+standalone (see "What exists today" below), but
+`core/orchestration/graph.py` (what `/api/tasks` actually calls) stops
+after producing a patch *proposal*. Docker Sandbox exists as real code
+but is unverified (no live daemon in this environment — see
+`sandbox/README.md`). Final Validator is still not started.
 
 ```
                     USER
@@ -65,7 +66,7 @@ automation are still Phase 7+.
                  Final Validator -> Human Approval -> Git PR
 ```
 
-## What exists today (Phases 1-6)
+## What exists today (Phases 1-7)
 
 - `apps/api` — FastAPI backend with JWT authentication (register/login),
   role-based `User` model, `Repository` CRUD scoped to the owner, a
@@ -97,9 +98,12 @@ automation are still Phase 7+.
   real code, unverified — no network/key here); the five-tier
   `PermissionLevel` / six-tier `AutonomyLevel` policy engine;
   `core/orchestration/graph.py`, a real compiled **LangGraph**
-  `StateGraph`; and `core/orchestration/self_correction.py`, the bounded
+  `StateGraph`; `core/orchestration/self_correction.py`, the bounded
   test -> debug -> patch -> retest loop (max 5 iterations, verified to
-  never exceed its cap). 37/37 tests pass.
+  never exceed its cap); and, new in Phase 7,
+  `core/policies/approval.py` — a deterministic human-approval-request
+  builder (spec section 27), never an LLM's judgment call. 41/41 tests
+  pass.
 - `tools` — the controlled `Tool` interface (permission-checked,
   timed, audit-logged on every call). Three READ_ONLY tools wrapping
   `code_intelligence` (`repository.analyze`, `code.search`,
@@ -117,7 +121,13 @@ automation are still Phase 7+.
   the Phase 4/5/6 status docs for a real bug this fixed (they used to
   silently prefer Docker whenever a daemon was reachable, which broke
   them in CI, where a daemon runs by default, unlike local dev here).
-  80/80 tests pass, including a real end-to-end
+  New in Phase 7: `tools/git` — `git.status`/`git.diff`/`git.log`
+  (READ_ONLY) and `git.branch`/`git.commit`/`git.push` (GIT_WRITE), real
+  wrappers around the system `git` binary, each tested against a real
+  repository (`git.push` against a real local bare remote, independently
+  re-verified by reading the bare repo's own log); and
+  `GitHubPullRequestClient`, real PR-creation code, unverified (no
+  network/token here). 94/94 tests pass, including a real end-to-end
   apply-a-patch-then-run-the-suite integration test.
 - `sandbox` — a `Sandbox` interface: `LocalProcessSandbox` (real, tested,
   no true isolation — see `sandbox/README.md`) and `DockerSandbox` (real,
@@ -159,7 +169,7 @@ automation are still Phase 7+.
   `PHASE_5_STATUS.md`), plus a frontend production build, on every
   push/PR.
 
-## What is scaffolded but not implemented (Phase 7+)
+## What is scaffolded but not implemented (Phase 8+)
 
 `agents/architecture`, `agents/tester`, `agents/documentation`,
 `agents/validator`, and `evaluation/` are currently empty directories
@@ -170,11 +180,13 @@ later phase's status doc says so. (`code_intelligence/`, `core/`,
 `agents/{requirement,repository,planner,coder,debugger,security,reviewer}`,
 `tools/`, and `sandbox/` are no longer placeholders — see above. Note the
 agent pipeline (`core/orchestration/graph.py`, used by `/api/tasks`) does
-NOT call `core/orchestration/self_correction.py`, `SecurityAgent`, or
-`CodeReviewAgent` yet — each exists and is tested as a standalone,
-callable component, but wiring them into the API pipeline was
-deliberately left for a separate, reviewable change — see
-`PHASE_5_STATUS.md`/`PHASE_6_STATUS.md`.)
+NOT call `core/orchestration/self_correction.py`, `SecurityAgent`,
+`CodeReviewAgent`, or any `tools/git` tool yet — each exists and is
+tested as a standalone, callable component, but wiring them into the API
+pipeline was deliberately left for a separate, reviewable change — see
+`PHASE_5_STATUS.md`/`PHASE_6_STATUS.md`/`PHASE_7_STATUS.md`. No pull
+request has ever actually been opened against a real repository by this
+project's own code.)
 
 ## Database schema (Phase 1 subset)
 
@@ -254,9 +266,12 @@ are still not implemented. The permission-level system exists
 (`core/policies/permissions.py`: `READ_ONLY`/`SAFE_WRITE`/`EXECUTION`/
 `GIT_WRITE`/`DEPLOYMENT`, gated by a 0-5 `AutonomyLevel`, with
 `DEPLOYMENT` always requiring human approval) and is enforced by every
-`Tool.run()` call. As of Phase 4, tools exist at every level up through
-EXECUTION (`filesystem.write`/`filesystem.patch`/`filesystem.delete` at
-SAFE_WRITE, `terminal.execute`/`test.run` at EXECUTION) — but real OS-level
+`Tool.run()` call. As of Phase 7, tools exist at every level up through
+GIT_WRITE (`filesystem.write`/`filesystem.patch`/`filesystem.delete` at
+SAFE_WRITE, `terminal.execute`/`test.run`/`security.scan` at EXECUTION or
+below, `git.branch`/`git.commit`/`git.push` at GIT_WRITE, each with a
+`core/policies/approval.py`-generated `ApprovalRequest` when a call
+exceeds the active autonomy level) — but real OS-level
 isolation for anything they run is unverified: `DockerSandbox` is real,
 complete code, but no live Docker daemon exists in this development
 environment, so what actually runs today is `LocalProcessSandbox`, a

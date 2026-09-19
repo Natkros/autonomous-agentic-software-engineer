@@ -1,11 +1,14 @@
 # Agent Roles
 
 This describes the multi-agent design ForgeAI is built toward. As of
-Phase 6, seven of these agents are real, tested, working code
+Phase 7, seven of these agents are real, tested, working code
 (`agents/requirement`, `agents/repository`, `agents/planner`,
 `agents/coder`, `agents/debugger`, `agents/security`, `agents/reviewer` —
-see `PHASE_3_STATUS.md`, `PHASE_5_STATUS.md`, and `PHASE_6_STATUS.md`);
-the remaining four still hold only empty placeholder directories under
+see `PHASE_3_STATUS.md`, `PHASE_5_STATUS.md`, and `PHASE_6_STATUS.md`).
+Phase 7 (git automation) added no new agent role — per the spec, it's
+tool-based (`tools/git`) plus a policy function
+(`core/policies/approval.py`), not a distinct agent. The remaining four
+agent roles still hold only empty placeholder directories under
 `agents/`.
 
 | Agent | Responsibility | Phase | Status |
@@ -47,7 +50,7 @@ stubs — a real, true finding about this project's current LLM layer.
 
 ## Orchestration
 
-Three things exist, not yet connected to each other:
+Four things exist, not yet connected to each other:
 
 1. A real, compiled **LangGraph** `StateGraph`
    (`core/orchestration/graph.py`, used by `POST /api/tasks`) wiring
@@ -63,29 +66,36 @@ Three things exist, not yet connected to each other:
 3. `SecurityAgent` and `CodeReviewAgent` (Phase 6): each callable
    standalone against a repository path or a single `PatchProposal`
    respectively, also not yet invoked from `graph.py` or the API.
+4. `tools/git`'s branch/commit/push tools plus
+   `core/policies/approval.py` (Phase 7): real, individually tested, not
+   yet chained into one "open a PR for this change" operation, and not
+   invoked from `graph.py` or the API — see `PHASE_7_STATUS.md`.
 
-No agent relies on hidden conversational context in any of the three.
+No agent relies on hidden conversational context in any of the four.
 Each `graph.py` node catches its own failures into `state["errors"]`
 rather than crashing the run. See `ARCHITECTURE.md` for the full target
-graph shape (git automation nodes are not wired in yet).
+graph shape.
 
 ## Tool framework
 
 `tools/base.py` defines the controlled `Tool` interface every agent tool
 implements: a Pydantic input schema, a minimum `PermissionLevel`, a
 timeout, and mandatory audit logging on every call (win or lose). Real
-tools exist at every permission level up through EXECUTION:
-`repository.analyze`/`code.search`/`symbol.search` (READ_ONLY, wrapping
-`code_intelligence`); `filesystem.read`/`filesystem.list` (READ_ONLY),
+tools exist at every permission level up through GIT_WRITE:
+`repository.analyze`/`code.search`/`symbol.search`,
+`filesystem.read`/`filesystem.list`, `git.status`/`git.diff`/`git.log`
+(READ_ONLY, the last three real `git` CLI wrappers);
 `filesystem.write`/`filesystem.delete`/`filesystem.patch` (SAFE_WRITE,
-the last one syntax-verifying Python content before ever writing it), and
+the last one syntax-verifying Python content before ever writing it) and
 `security.scan` (READ_ONLY, combining AST-based static analysis with
-regex-based secret detection); and `terminal.execute`/`test.run`
-(EXECUTION, allowlisted and sandboxed — both default explicitly to
+regex-based secret detection); `terminal.execute`/`test.run` (EXECUTION,
+allowlisted and sandboxed — both default explicitly to
 `LocalProcessSandbox`, not whatever `sandbox.factory.get_default_sandbox()`
 would pick, after that silent Docker-preference broke them in CI — see
-`PHASE_4_STATUS.md`/`PHASE_5_STATUS.md`). GIT_WRITE and DEPLOYMENT tools
-don't exist yet — see `core/policies/permissions.py`.
+`PHASE_4_STATUS.md`/`PHASE_5_STATUS.md`); and `git.branch`/`git.commit`/
+`git.push` (GIT_WRITE, each tested against a real git repository —
+`git.push` against a real local bare remote). Only DEPLOYMENT has no tool
+yet — see `core/policies/permissions.py`.
 
 ## Autonomy levels
 
@@ -93,8 +103,11 @@ don't exist yet — see `core/policies/permissions.py`.
 through 5 full autonomy) as a real, tested policy engine mapping each
 level to a maximum `PermissionLevel` it may exercise without stopping for
 human approval — `DEPLOYMENT` always requires approval regardless of
-level. As of Phase 4/5, tools exist for every level up through EXECUTION,
-so this policy now has real work to gate — but real OS-level isolation
-for what EXECUTION-level tools run is unverified (see
-`sandbox/README.md`): only `LocalProcessSandbox`, a weaker mitigation, has
-actually been exercised in this environment.
+level. `core/policies/approval.py` (Phase 7) turns "this exceeds the
+autonomy level" into the actual structured `ApprovalRequest` a human would
+see (spec section 27: reason, files affected, commands, risk level).
+Tools exist for every level up through GIT_WRITE, so this policy now has
+real work to gate — but real OS-level isolation for what EXECUTION-level
+tools run is unverified (see `sandbox/README.md`): only
+`LocalProcessSandbox`, a weaker mitigation, has actually been exercised in
+this environment.
