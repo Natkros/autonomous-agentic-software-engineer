@@ -159,13 +159,21 @@ jobs:
         run: |
           # The cert is generated INSIDE the container by the same user
           # that later reads it, rather than on the host and bind-mounted
-          # in - that sidesteps any host/container UID or file-permission
-          # mismatch entirely (a prior bind-mount approach failed nginx -t
-          # for reasons not diagnosable from this API-only access level:
-          # raw job logs require admin rights on this repo). Only
-          # nginx.conf itself is mounted, read-only, from the real repo
-          # file being validated.
+          # in, to avoid any host/container file-permission mismatch.
+          #
+          # Real root cause of this check's earlier failures: nginx
+          # resolves each `upstream { server ...; }` hostname at config
+          # LOAD time (not lazily), and this config's `api`/`web`
+          # upstreams only exist as service names inside the real
+          # docker-compose network - standing this container up alone
+          # gives nginx nothing to resolve them to, so `nginx -t` fails
+          # with "host not found in upstream", independent of certs
+          # entirely. --add-host points both names at loopback purely so
+          # DNS resolution succeeds for this syntax check; nothing needs
+          # to actually be listening on those addresses for `nginx -t`.
           docker run --rm \
+            --add-host api:127.0.0.1 \
+            --add-host web:127.0.0.1 \
             -v "$(pwd)/infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \
             nginx:alpine sh -c "
               set -ex
