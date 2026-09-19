@@ -11,15 +11,16 @@ and [`AGENTS.md`](AGENTS.md).
 
 **This repository is being built incrementally, one phase at a time.**
 Only claim a feature works if the relevant phase's status doc says it was
-actually run and verified. Current status: **Phase 8 complete** — see
+actually run and verified. Current status: **Phase 9 complete** — see
 [`PHASE_1_STATUS.md`](PHASE_1_STATUS.md),
 [`PHASE_2_STATUS.md`](PHASE_2_STATUS.md),
 [`PHASE_3_STATUS.md`](PHASE_3_STATUS.md),
 [`PHASE_4_STATUS.md`](PHASE_4_STATUS.md),
 [`PHASE_5_STATUS.md`](PHASE_5_STATUS.md),
 [`PHASE_6_STATUS.md`](PHASE_6_STATUS.md),
-[`PHASE_7_STATUS.md`](PHASE_7_STATUS.md), and
-[`PHASE_8_STATUS.md`](PHASE_8_STATUS.md) for exactly what was built and
+[`PHASE_7_STATUS.md`](PHASE_7_STATUS.md),
+[`PHASE_8_STATUS.md`](PHASE_8_STATUS.md), and
+[`PHASE_9_STATUS.md`](PHASE_9_STATUS.md) for exactly what was built and
 tested versus what's still a placeholder.
 
 ## What works right now
@@ -99,27 +100,45 @@ tested versus what's still a placeholder.
   documented rough heuristic (not a real tokenizer) and illustrative
   pricing; mock calls are tracked at exactly $0.00 since they're not real
   API calls. See [`PHASE_8_STATUS.md`](PHASE_8_STATUS.md).
-- A real pytest suite, **246 tests total**, run in this session and
+- **Observability** (`core/observability/`): real structured JSON logging,
+  real OpenTelemetry spans (verified via OTel's own in-memory exporter),
+  and real Prometheus metrics (verified by parsing the library's own
+  `generate_latest()` output) — all wired directly into
+  `tools/base.py`'s `Tool.run()`, so every tool call anywhere in the
+  system produces a span, a metric observation, and a structured log
+  line. `GET /metrics` on the API serves this in real Prometheus text
+  format. **Important**: no current API endpoint routes through an
+  instrumented `Tool.run()` yet (`/analyze` and `/tasks` call earlier
+  phases' code directly), so `/metrics` today is real but empty — see
+  [`PHASE_9_STATUS.md`](PHASE_9_STATUS.md) for how to see it populated
+  and what a real Prometheus/Grafana stack would need beyond the valid
+  config files this phase added (`infrastructure/prometheus/prometheus.yml`,
+  `infrastructure/grafana/forgeai-dashboard.json`), neither of which has
+  been run against a live instance here.
+- A real pytest suite, **259 tests total**, run in this session and
   double-checked in clean Python 3.12 virtual environments matching CI
   (not just the pre-warmed shared dev venv — see `PHASE_5_STATUS.md` for
   why that distinction matters, including real CI-only bugs it caught in
-  Phases 5 and 7): `code_intelligence` (40), `core` (47), `sandbox` (12),
-  `tools` (95), `agents` (28), `evaluation` (4), `apps/api` (20), plus
+  Phases 5 and 7): `code_intelligence` (40), `core` (58), `sandbox` (12),
+  `tools` (95), `agents` (28), `evaluation` (4), `apps/api` (22), plus
   the frontend build.
 
 ## What does not exist yet
 
-Observability and production deployment tooling (Phases 9-10). The
-corresponding agent directories (`agents/architecture`, `agents/tester`,
-`agents/documentation`, `agents/validator`) are empty scaffolding. The
-agent pipeline (`core/orchestration/graph.py`, used by `/api/tasks`) does
-not yet call the self-correction loop, the Phase 4 tools, the Phase 6
-review/security agents, or the Phase 7 git/approval tools — it still
-stops after the Coding Agent proposes a patch. `MockLLMProvider`'s patch
-content is a deterministic heuristic stub (a valid-but-trivial function),
-never a real fix — the self-correction loop and the evaluation harness
-built on top of it prove the *retry mechanism* is bounded and correct,
-not that any AI is meaningfully debugging or solving code (see
+Production deployment tooling (Phase 10): CI/CD beyond the existing test
+workflow, secrets management, and production monitoring/health-check
+automation. The corresponding agent directories (`agents/architecture`,
+`agents/tester`, `agents/documentation`, `agents/validator`) are empty
+scaffolding. The agent pipeline (`core/orchestration/graph.py`, used by
+`/api/tasks`) does not yet call the self-correction loop, the Phase 4
+tools, the Phase 6 review/security agents, or the Phase 7 git/approval
+tools — it still stops after the Coding Agent proposes a patch, and as a
+direct consequence none of Phase 9's tool-level instrumentation currently
+observes any real API traffic. `MockLLMProvider`'s patch content is a
+deterministic heuristic stub (a valid-but-trivial function), never a real
+fix — the self-correction loop and the evaluation harness built on top of
+it prove the *retry mechanism* is bounded and correct, not that any AI is
+meaningfully debugging or solving code (see
 `PHASE_5_STATUS.md`/`PHASE_8_STATUS.md`). The static analysis and secret
 scanning are original, dependency-free implementations covering a
 deliberately small rule set — not a wrapper around a real tool like
@@ -130,8 +149,9 @@ Cost tracking is not wired into any LLM call or pipeline run yet. A call
 graph (which function calls which) also doesn't exist yet — only
 file-level import relationships are resolved. See each phase's status doc
 for the full list of explicit gaps, including that no real LLM call has
-ever been made in this environment and Docker sandboxing has never been
-run against a live daemon here.
+ever been made in this environment, Docker sandboxing has never been run
+against a live daemon here, and no Prometheus/Grafana instance has ever
+scraped or rendered this project's real metrics.
 
 ## Local development
 
@@ -165,7 +185,7 @@ cd code_intelligence && python -m venv .venv && source .venv/Scripts/activate
 pip install -r requirements-dev.txt && python -m pytest -v   # 40 passed
 
 cd ../core && python -m venv .venv && source .venv/Scripts/activate
-pip install -r requirements-dev.txt && python -m pytest -v   # 47 passed
+pip install -r requirements-dev.txt && python -m pytest -v   # 58 passed
 
 cd ../sandbox && python -m venv .venv && source .venv/Scripts/activate
 pip install -r requirements-dev.txt && python -m pytest -v   # 12 passed
@@ -198,12 +218,16 @@ cp .env.example .env
 docker compose up --build
 ```
 
-This brings up Postgres, Redis, the API (port 8000), and the web app
-(port 3000). **Note:** this compose stack has not been exercised in this
-environment (no Docker daemon available here), and its `api` image does
-not currently include `code_intelligence`/`core`/`agents`/`tools`/`sandbox`
-in its build context, so `/analyze` and `/tasks` would not work inside it
-as-is — see `PHASE_2_STATUS.md`/`PHASE_3_STATUS.md`.
+This brings up Postgres, Redis, the API (port 8000), the web app (port
+3000), Prometheus (port 9090), and Grafana (port 3001). **Note:** this
+compose stack has not been exercised in this environment (no Docker
+daemon available here), and its `api` image does not currently include
+`code_intelligence`/`core`/`agents`/`tools`/`sandbox` in its build
+context, so `/analyze` and `/tasks` would not work inside it as-is — see
+`PHASE_2_STATUS.md`/`PHASE_3_STATUS.md`. The Grafana dashboard file is
+mounted but not wired into Grafana's provisioning system, so it won't
+auto-load without also adding a provisioning config — see
+`PHASE_9_STATUS.md`.
 
 ## Environment variables
 
@@ -225,6 +249,7 @@ See [`.env.example`](.env.example) for the full list (`DATABASE_URL`,
 | GET | `/api/repositories/{id}/analysis` | Bearer | Fetch the most recent analysis (404 if none has run) |
 | POST | `/api/tasks` | Bearer | Clone the repository and run the agent pipeline against a natural-language request |
 | GET | `/api/tasks/{id}` | Bearer | Fetch a task run's stored result |
+| GET | `/metrics` | none | Real Prometheus text-exposition metrics (currently empty — see `PHASE_9_STATUS.md`) |
 
 ## Roadmap
 
@@ -236,7 +261,7 @@ See [`.env.example`](.env.example) for the full list (`DATABASE_URL`,
 6. **Code review** — static analysis, security scanning. ✅ done (real, deterministic checks; not wired into the pipeline yet — see `PHASE_6_STATUS.md`)
 7. **Git automation** — branches, commits, diffs, PRs, approval workflow. ✅ done (branch/commit/push verified against real local repos; PR creation is real, unverified code — see `PHASE_7_STATUS.md`)
 8. **Evaluation** — benchmark tasks, success metrics, cost tracking. ✅ done (measures mechanism convergence, not coding correctness — see `PHASE_8_STATUS.md`)
-9. Observability — OpenTelemetry, Prometheus, Grafana.
+9. **Observability** — OpenTelemetry, Prometheus, Grafana. ✅ done (real instrumentation, verified in-process; no live Prometheus/Grafana scrape yet — see `PHASE_9_STATUS.md`)
 10. Production deployment — CI/CD, secrets management, monitoring.
 
 ## Security model
@@ -252,4 +277,4 @@ are still not implemented.
 ## Contributing
 
 This is an active build-out; see the phase status docs before assuming any
-capability beyond Phase 8 exists.
+capability beyond Phase 9 exists.

@@ -1,0 +1,18 @@
+# Real, valid Prometheus scrape configuration targeting the API's real
+# GET /metrics endpoint (apps/api/app/api/routes/metrics.py). Unverified
+# against a live Prometheus instance in this environment — validate its
+# syntax with `promtool check config prometheus.yml` and confirm real
+# scraping once a Prometheus server is available. See PHASE_9_STATUS.md.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: forgeai-api
+    static_configs:
+      # "api" resolves via Docker Compose's internal DNS when this file is
+      # mounted into a Prometheus container on the same network as
+      # docker-compose.yml's `api` service; use localhost:8000 instead for
+      # a Prometheus running directly on the host.
+      - targets: ["api:8000"]
+    metrics_path: /metrics

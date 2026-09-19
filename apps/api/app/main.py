@@ -1,13 +1,21 @@
 import logging
+import os
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import auth, health, repositories, tasks
+from app.api.routes import auth, health, metrics, repositories, tasks
 from app.config import get_settings
 from app.database import Base, engine
+
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+from core.observability.logging_config import configure_json_logging  # noqa: E402
 
 settings = get_settings()
 logger = logging.getLogger("forgeai.api")
@@ -15,6 +23,9 @@ logger = logging.getLogger("forgeai.api")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Phase 9: every log line from here on is a single JSON object — see
+    # core/observability/logging_config.py.
+    configure_json_logging()
     # Phase 1: schema is created directly. Alembic migrations land in a later phase.
     Base.metadata.create_all(bind=engine)
     yield
@@ -34,6 +45,7 @@ app.include_router(health.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(repositories.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
+app.include_router(metrics.router)
 
 
 @app.exception_handler(HTTPException)

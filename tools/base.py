@@ -6,6 +6,11 @@ invocation is audit-logged — regardless of whether it succeeds. Agents
 never call arbitrary code directly; they only ever go through
 ``Tool.run()``, which enforces the permission check before the tool's own
 logic runs at all.
+
+As of Phase 9, every call also produces a real OpenTelemetry span, a real
+Prometheus metric observation, and a structured JSON log line — see
+``core/observability/``. None of this changes ``ToolResult``/``AuditLog``
+behavior; it's additive instrumentation around the same execution path.
 """
 from __future__ import annotations
 
@@ -15,8 +20,13 @@ from dataclasses import dataclass, field
 
 from pydantic import BaseModel
 
+from core.observability.logging_config import get_logger
+from core.observability.metrics import record_tool_call
+from core.observability.tracing import get_tracer
 from core.policies.permissions import AutonomyLevel, PermissionDeniedError, PermissionLevel, enforce_permission
 from core.state.schemas import ToolCallRecord
+
+_logger = get_logger("forgeai.tools")
 
 
 @dataclass
@@ -66,22 +76,45 @@ class Tool(ABC):
     def run(self, audit_log: AuditLog, autonomy_level: AutonomyLevel, **kwargs) -> ToolResult:
         input_summary = ", ".join(f"{k}={v!r}" for k, v in kwargs.items())[:500]
         start = time.monotonic()
+        tracer = get_tracer("forgeai.tools")
 
-        try:
-            enforce_permission(self.name, self.permission, autonomy_level)
-            params = self.input_schema.model_validate(kwargs)
-            output = self._execute(params)
-            duration_ms = (time.monotonic() - start) * 1000
-            audit_log.record(self.name, input_summary, success=True, duration_ms=duration_ms)
-            return ToolResult(success=True, output=output, duration_ms=duration_ms)
-        except PermissionDeniedError as exc:
-            duration_ms = (time.monotonic() - start) * 1000
-            audit_log.record(self.name, input_summary, success=False, duration_ms=duration_ms, error=str(exc))
-            return ToolResult(success=False, error=str(exc), duration_ms=duration_ms)
-        except Exception as exc:  # tool-specific failures are still audited
-            duration_ms = (time.monotonic() - start) * 1000
-            audit_log.record(self.name, input_summary, success=False, duration_ms=duration_ms, error=str(exc))
-            return ToolResult(success=False, error=str(exc), duration_ms=duration_ms)
+        with tracer.start_as_current_span(self.name) as span:
+            span.set_attribute("tool.name", self.name)
+            span.set_attribute("tool.permission", self.permission.name)
+            span.set_attribute("tool.autonomy_level", autonomy_level.name)
+
+            try:
+                enforce_permission(self.name, self.permission, autonomy_level)
+                params = self.input_schema.model_validate(kwargs)
+                output = self._execute(params)
+                duration_ms = (time.monotonic() - start) * 1000
+                audit_log.record(self.name, input_summary, success=True, duration_ms=duration_ms)
+                span.set_attribute("tool.success", True)
+                record_tool_call(self.name, success=True, duration_seconds=duration_ms / 1000)
+                _logger.info(
+                    "tool_call_completed", extra={"tool_name": self.name, "success": True, "duration_ms": duration_ms},
+                )
+                return ToolResult(success=True, output=output, duration_ms=duration_ms)
+            except PermissionDeniedError as exc:
+                duration_ms = (time.monotonic() - start) * 1000
+                audit_log.record(self.name, input_summary, success=False, duration_ms=duration_ms, error=str(exc))
+                span.set_attribute("tool.success", False)
+                record_tool_call(self.name, success=False, duration_seconds=duration_ms / 1000)
+                _logger.warning(
+                    "tool_call_denied",
+                    extra={"tool_name": self.name, "success": False, "duration_ms": duration_ms, "error": str(exc)},
+                )
+                return ToolResult(success=False, error=str(exc), duration_ms=duration_ms)
+            except Exception as exc:  # tool-specific failures are still audited
+                duration_ms = (time.monotonic() - start) * 1000
+                audit_log.record(self.name, input_summary, success=False, duration_ms=duration_ms, error=str(exc))
+                span.set_attribute("tool.success", False)
+                record_tool_call(self.name, success=False, duration_seconds=duration_ms / 1000)
+                _logger.error(
+                    "tool_call_failed",
+                    extra={"tool_name": self.name, "success": False, "duration_ms": duration_ms, "error": str(exc)},
+                )
+                return ToolResult(success=False, error=str(exc), duration_ms=duration_ms)
 
 
 class ToolRegistry:

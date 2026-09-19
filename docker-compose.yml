@@ -52,5 +52,28 @@ services:
     depends_on:
       - api
 
+  # Phase 9: scrapes the API's real GET /metrics endpoint. Unverified
+  # against a live stack in this environment — see PHASE_9_STATUS.md.
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - api
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./infrastructure/grafana/forgeai-dashboard.json:/var/lib/grafana/dashboards/forgeai-dashboard.json:ro
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+
 volumes:
   postgres_data:

@@ -6,7 +6,7 @@ which parts of it exist today versus which are placeholders for a later phase.
 
 ## Target system
 
-As of Phase 7, every box in this diagram except Final Validator exists as
+As of Phase 9, every box in this diagram except Final Validator exists as
 real, running code (the Git Tool box now includes branch/commit/push and
 a real, unverified PR-creation client), EXCEPT that nothing currently
 connects the Planning/Coding agents' output to the Execution Agent, the
@@ -16,7 +16,11 @@ standalone (see "What exists today" below), but
 `core/orchestration/graph.py` (what `/api/tasks` actually calls) stops
 after producing a patch *proposal*. Docker Sandbox exists as real code
 but is unverified (no live daemon in this environment — see
-`sandbox/README.md`). Final Validator is still not started.
+`sandbox/README.md`). Final Validator is still not started. Not shown in
+this diagram: Phase 9 added real observability (tracing/metrics/
+structured logs) around every `Tool.run()` call — but since the pipeline
+doesn't reach the tool layer yet, that instrumentation currently observes
+nothing from real API traffic.
 
 ```
                     USER
@@ -66,7 +70,7 @@ but is unverified (no live daemon in this environment — see
                  Final Validator -> Human Approval -> Git PR
 ```
 
-## What exists today (Phases 1-8)
+## What exists today (Phases 1-9)
 
 - `apps/api` — FastAPI backend with JWT authentication (register/login),
   role-based `User` model, `Repository` CRUD scoped to the owner, a
@@ -176,11 +180,26 @@ but is unverified (no live daemon in this environment — see
   (Requirement -> Repository -> Planner -> Coder) against it, storing the
   result in a new `tasks` table. Verified end-to-end against a real cloned
   fixture repo, using `MockLLMProvider` (no API key configured here).
+- `core/observability/` — a standalone, tested observability layer
+  (Phase 9): real structured JSON logging (`logging_config.py`), real
+  OpenTelemetry tracing verified via OTel's own `InMemorySpanExporter`
+  (`tracing.py`), and real Prometheus metrics verified by parsing the
+  library's own `generate_latest()` output (`metrics.py`). Wired directly
+  into `tools/base.py`'s `Tool.run()`, so every tool call anywhere in the
+  system already produces a span/metric/log — but see below for why no
+  real API traffic reaches it yet. `apps/api` gained a real
+  `GET /metrics` endpoint and configures JSON logging on startup.
+  58/58 `core` tests pass (up from 47).
+- `infrastructure/prometheus/prometheus.yml` and
+  `infrastructure/grafana/forgeai-dashboard.json` — real, valid
+  (YAML/JSON-parsed) configuration wired into `docker-compose.yml`'s new
+  `prometheus`/`grafana` services. **Unverified against a live
+  Prometheus/Grafana instance** — no Docker daemon in this environment.
 - `docker-compose.yml` + `infrastructure/docker/*.Dockerfile` — Postgres,
-  Redis, API, and web services wired together for local/prod-like runs.
-  (Not yet exercised in this session, and the `api` image does not yet
-  include `code_intelligence`/`core`/`agents`/`tools`/`sandbox` in its
-  build context — see `PHASE_2_STATUS.md`/`PHASE_3_STATUS.md`.)
+  Redis, API, web, Prometheus, and Grafana services wired together for
+  local/prod-like runs. (Not yet exercised in this session, and the `api`
+  image does not yet include `code_intelligence`/`core`/`agents`/`tools`/
+  `sandbox` in its build context — see `PHASE_2_STATUS.md`/`PHASE_3_STATUS.md`.)
 - `.github/workflows/ci.yml` — runs `code_intelligence`, `core`,
   `sandbox`, `tools`, `agents`, `evaluation`, and `backend` pytest suites
   (each installing its own `requirements-dev.txt` fresh, which is what caught a
@@ -188,7 +207,7 @@ but is unverified (no live daemon in this environment — see
   `PHASE_5_STATUS.md`), plus a frontend production build, on every
   push/PR.
 
-## What is scaffolded but not implemented (Phase 9+)
+## What is scaffolded but not implemented (Phase 10+)
 
 `agents/architecture`, `agents/tester`, `agents/documentation`, and
 `agents/validator` are currently empty directories (holding a
@@ -206,8 +225,10 @@ them into the API pipeline was deliberately left for a separate,
 reviewable change — see
 `PHASE_5_STATUS.md`/`PHASE_6_STATUS.md`/`PHASE_7_STATUS.md`. No pull
 request has ever actually been opened against a real repository by this
-project's own code, and no evaluation benchmark measures coding
-correctness yet — see `PHASE_8_STATUS.md`.)
+project's own code, no evaluation benchmark measures coding correctness
+yet — see `PHASE_8_STATUS.md` — and no Prometheus/Grafana instance has
+ever scraped or rendered this project's real metrics — see
+`PHASE_9_STATUS.md`.)
 
 ## Database schema (Phase 1 subset)
 
