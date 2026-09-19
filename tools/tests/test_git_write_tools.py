@@ -42,6 +42,30 @@ def test_commit_creates_a_real_commit(git_repo):
     assert log_result.output["commits"][0]["message"] == "Add new_file.py"
 
 
+def test_commit_succeeds_even_without_any_host_git_identity_configured(git_repo, monkeypatch, tmp_path):
+    """Regression test for a real bug this project hit: the local dev
+    machine happens to have git user.name/user.email configured globally,
+    but GitHub Actions' fresh runners don't — commit_all() failed there
+    with "Please tell me who you are" until GitRepo started passing an
+    explicit identity via GIT_AUTHOR_NAME/EMAIL env vars. This test
+    points HOME/USERPROFILE at an empty directory so no global gitconfig
+    can be found, simulating exactly that CI condition.
+    """
+    fake_home = str(tmp_path / "fake_home")
+    os.makedirs(fake_home, exist_ok=True)
+    monkeypatch.setenv("HOME", fake_home)
+    monkeypatch.setenv("USERPROFILE", fake_home)
+
+    with open(os.path.join(git_repo, "new_file.py"), "w") as fh:
+        fh.write("x = 1\n")
+
+    result = GitCommitTool().run(
+        AuditLog(), AutonomyLevel.LEVEL_4_AUTO_BRANCH_AND_PR,
+        repository_path=git_repo, message="Add new_file.py",
+    )
+    assert result.success is True, result.error
+
+
 def test_commit_with_nothing_to_commit_fails_cleanly(git_repo):
     result = GitCommitTool().run(
         AuditLog(), AutonomyLevel.LEVEL_4_AUTO_BRANCH_AND_PR,

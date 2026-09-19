@@ -34,10 +34,38 @@ approval workflow.
   override.
 - [x] New schemas: `ApprovalRequest`, `ApprovalStatus`, `GitCommitRecord`,
   `GitStatusEntry`.
-- [x] Test count: `tools` grew from 80 to 94, `core` grew from 37 to 41.
-  **235 tests total** across all six suites (`code_intelligence` 40,
-  `core` 41, `sandbox` 12, `tools` 94, `agents` 28, `apps/api` 20),
-  re-verified in clean Python 3.12 venvs matching CI.
+- [x] Test count: `tools` grew from 80 to 95 (94 + 1 regression test, see
+  below), `core` grew from 37 to 41. **236 tests total** across all six
+  suites (`code_intelligence` 40, `core` 41, `sandbox` 12, `tools` 95,
+  `agents` 28, `apps/api` 20), re-verified in clean Python 3.12 venvs
+  matching CI.
+
+**Post-push correction:** the first push of this phase's work passed
+every local check (including a fresh Python 3.12 venv) but **failed in
+CI**, on the `tools` job specifically. Cause: this project's local dev
+machine happens to have git `user.name`/`user.email` configured globally,
+so `git commit` worked without any per-call identity — but
+`GitCommitTool` never set `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL` env vars
+itself, only the test fixture's own setup commit did. GitHub Actions'
+fresh runners have no global git config at all, so every commit made
+*through the tool* (as opposed to the fixture's own `git init` + initial
+commit) failed with "Please tell me who you are." `GitRepo.commit_all()`
+now always sets an explicit identity (`ForgeAI Agent
+<agent@forgeai.local>`) via environment variables, never relying on the
+host's config. This was confirmed by literally reproducing the failure
+locally first — pointing `HOME`/`USERPROFILE` at an empty directory to
+simulate "no global gitconfig," watching `git commit` fail with exactly
+CI's error, then watching it succeed once the identity env vars were
+added — and a regression test
+(`test_commit_succeeds_even_without_any_host_git_identity_configured`)
+does the same simulation to keep this from regressing silently again.
+This is a third distinct category of "passes locally, fails in CI" gap
+this project has now hit: a missing dependency (Phase 3), an
+environment-configuration difference (Phase 5, Docker daemon presence),
+and now host machine personalization (git identity) that a fresh
+environment doesn't share. All three are now covered by either a fresh
+venv check, an explicit non-Docker default, or a simulated-absence
+regression test, respectively.
 
 ## Explicitly NOT done in Phase 7
 
