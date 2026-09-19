@@ -51,6 +51,16 @@ def test_reports_sandbox_isolation_flag_honestly():
     assert result.output["sandbox_provided_isolation"] is False
 
 
+def test_default_constructor_uses_local_process_sandbox_not_docker():
+    """Regression test for a real bug this project hit: GitHub's
+    `ubuntu-latest` CI runners have a live Docker daemon by default (unlike
+    local dev here), so silently defaulting to `get_default_sandbox()`
+    made this tool try to run allowlisted binaries inside a bare Docker
+    container that doesn't have them installed. See the module docstring.
+    """
+    assert isinstance(TerminalExecuteTool().sandbox, LocalProcessSandbox)
+
+
 def test_command_is_confined_to_the_workspace_cwd():
     with tempfile.TemporaryDirectory() as root:
         tool = TerminalExecuteTool(sandbox=LocalProcessSandbox())

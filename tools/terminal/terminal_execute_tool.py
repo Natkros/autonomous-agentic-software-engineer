@@ -1,7 +1,16 @@
-"""``terminal.execute`` — runs a command through a `Sandbox`
-(`sandbox/factory.py` picks Docker if a daemon is available, otherwise the
-weaker `LocalProcessSandbox`; see `sandbox/README.md` for exactly what
-that fallback does and doesn't guarantee).
+"""``terminal.execute`` — runs a command through a `Sandbox`. Defaults to
+`LocalProcessSandbox`, NOT `sandbox.factory.get_default_sandbox()` —
+deliberately, not by oversight. Every allowlisted binary here (pytest,
+npm, ruff, mypy, eslint, tsc, ...) must already be installed in whatever
+environment runs the command; a bare `DockerSandbox` container starts
+from a stock base image with none of that installed and no provisioning
+step to add it. Silently preferring Docker whenever a daemon happens to
+be reachable would make this tool fail on any such machine — which is
+exactly what broke `test.run` (the same underlying issue) in CI, where
+GitHub's `ubuntu-latest` runners have a live Docker daemon by default
+unlike this project's local dev environment. Pass an explicit
+`DockerSandbox` (with a purpose-built image containing what a specific
+command needs) if real isolation is required for a specific call.
 
 On top of whatever the underlying sandbox provides, this tool adds two of
 its own mitigations regardless of which sandbox is active:
@@ -22,7 +31,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from core.policies.permissions import PermissionLevel
 from sandbox.base import Sandbox
-from sandbox.factory import get_default_sandbox
+from sandbox.local_process_sandbox import LocalProcessSandbox
 from tools.base import Tool
 from tools.filesystem.workspace import Workspace
 
@@ -72,7 +81,7 @@ class TerminalExecuteTool(Tool):
     input_schema = TerminalExecuteParams
 
     def __init__(self, sandbox: Sandbox | None = None):
-        self.sandbox = sandbox or get_default_sandbox()
+        self.sandbox = sandbox or LocalProcessSandbox()
 
     def _execute(self, params: TerminalExecuteParams) -> dict:
         workspace = Workspace(params.workspace_root)  # validates the root exists

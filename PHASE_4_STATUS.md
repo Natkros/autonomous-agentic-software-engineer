@@ -51,6 +51,22 @@ patch generation, test execution, retry logic.
   run in this session on Windows with Python 3.14.7.
 - [x] CI now also runs `sandbox`'s suite.
 
+**Post-Phase-5 correction:** `test.run` and `terminal.execute` originally
+defaulted to `sandbox.factory.get_default_sandbox()` (Docker if a daemon
+is reachable, else `LocalProcessSandbox`). This looked correct and passed
+locally, but was a real bug: GitHub's `ubuntu-latest` CI runners have a
+live Docker daemon by default (unlike this project's local dev
+environment, where the daemon isn't running), so CI silently started
+running `pytest`/allowlisted binaries inside a bare `python:3.12-slim`
+container with none of those dependencies installed — and every such call
+failed. Neither tool actually needs Docker's isolation to do its job
+correctly (they need the CALLING environment's already-installed
+dependencies via `sys.executable`/`PATH`), so both now default explicitly
+to `LocalProcessSandbox` and no longer call `get_default_sandbox()` at
+all. See `PHASE_5_STATUS.md` for how this was caught and fixed, and the
+regression tests added to `tools/tests/test_run_tests_tool.py` and
+`tools/tests/test_terminal_execute_tool.py` that lock the default in.
+
 ## Explicitly NOT done in Phase 4
 
 - **`DockerSandbox.run_command()` has never been run against a live

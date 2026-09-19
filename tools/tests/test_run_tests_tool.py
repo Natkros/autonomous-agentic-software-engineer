@@ -54,6 +54,16 @@ def test_run_reports_no_tests_collected_distinctly():
     assert result.output["all_passed"] is False
 
 
+def test_default_constructor_uses_local_process_sandbox_not_docker():
+    """Regression test: this tool must reuse the calling interpreter's
+    already-installed pytest via `sys.executable`, never a bare Docker
+    container with nothing installed. See the module docstring — this is
+    what actually broke in CI (GitHub's ubuntu-latest runners have a live
+    Docker daemon by default) until it was fixed.
+    """
+    assert isinstance(RunTestsTool().sandbox, LocalProcessSandbox)
+
+
 def test_run_denied_below_execution_autonomy():
     with tempfile.TemporaryDirectory() as root:
         result = RunTestsTool(sandbox=LocalProcessSandbox()).run(

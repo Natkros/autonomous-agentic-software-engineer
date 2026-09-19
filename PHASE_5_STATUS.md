@@ -84,6 +84,33 @@ iterations).
   matching is exercised structurally, not against a live failure, unlike
   every other category.
 
+## A real bug CI caught after this phase's initial commit
+
+The first push of this phase's work passed every local check (including
+fresh Python 3.12 venvs) but **failed in CI**: `core`'s test suite failed
+specifically because `core/orchestration/self_correction.py` calls
+`RunTestsTool()` without specifying a sandbox, and that tool used to
+default to `sandbox.factory.get_default_sandbox()` — which prefers Docker
+whenever a daemon is reachable. GitHub's `ubuntu-latest` runners have a
+live Docker daemon running by default; this project's local dev
+environment does not. So locally, `test.run` always fell back to
+`LocalProcessSandbox` (the only thing ever actually exercised here), while
+in CI it silently switched to running `pytest` inside a bare
+`python:3.12-slim` container that has no `pytest` installed — every real
+test-execution call failed, which broke the self-correction loop's
+counts and its test assertions.
+
+Fixed by making `test.run` and `terminal.execute` default explicitly to
+`LocalProcessSandbox` (see `PHASE_4_STATUS.md`) instead of ever silently
+preferring Docker, since neither tool's job (reusing the calling
+environment's already-installed dependencies) is served by an unprovisioned
+container. This is exactly the kind of gap the "verify in a fresh venv
+matching CI" discipline from the Phase 3 incident does NOT catch — it was
+an environment-configuration difference (is Docker running?), not a
+dependency-installation difference — so CI itself, not local verification,
+is what caught it. That is a real limitation of local-only checking worth
+remembering for later phases.
+
 ## How to verify this yourself
 
 ```bash

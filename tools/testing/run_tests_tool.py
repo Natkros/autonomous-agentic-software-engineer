@@ -4,7 +4,19 @@ line, rather than just returning a raw exit code.
 
 Uses `sys.executable -m pytest` (this interpreter's own pytest) rather
 than a bare `pytest` on PATH, so it works regardless of which environment
-invoked the tool.
+invoked the tool. This is exactly why the default sandbox here is
+`LocalProcessSandbox`, NOT `get_default_sandbox()`: this tool deliberately
+reuses the CALLING interpreter's already-installed dependencies (pytest,
+and whatever the target project needs) via `sys.executable`. A
+`DockerSandbox` container starts from a bare base image with none of that
+installed — there is no provisioning step that puts the project's
+dependencies inside the container — so silently preferring Docker here
+would make every real test run fail with "No module named pytest" on any
+machine that happens to have a Docker daemon running. That is not a
+hypothetical: it is exactly what broke this tool in CI (GitHub's
+`ubuntu-latest` runners have a live Docker daemon by default, unlike this
+project's local dev environment) until this was fixed. See
+`sandbox/README.md` and `PHASE_4_STATUS.md`/`PHASE_5_STATUS.md`.
 """
 from __future__ import annotations
 
@@ -15,7 +27,7 @@ from pydantic import BaseModel, Field
 
 from core.policies.permissions import PermissionLevel
 from sandbox.base import Sandbox
-from sandbox.factory import get_default_sandbox
+from sandbox.local_process_sandbox import LocalProcessSandbox
 from tools.base import Tool
 from tools.filesystem.workspace import Workspace
 
@@ -49,7 +61,7 @@ class RunTestsTool(Tool):
     input_schema = RunTestsParams
 
     def __init__(self, sandbox: Sandbox | None = None):
-        self.sandbox = sandbox or get_default_sandbox()
+        self.sandbox = sandbox or LocalProcessSandbox()
 
     def _execute(self, params: RunTestsParams) -> dict:
         workspace = Workspace(params.workspace_root)
