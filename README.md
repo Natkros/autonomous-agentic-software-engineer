@@ -11,12 +11,13 @@ and [`AGENTS.md`](AGENTS.md).
 
 **This repository is being built incrementally, one phase at a time.**
 Only claim a feature works if the relevant phase's status doc says it was
-actually run and verified. Current status: **Phase 5 complete** — see
+actually run and verified. Current status: **Phase 6 complete** — see
 [`PHASE_1_STATUS.md`](PHASE_1_STATUS.md),
 [`PHASE_2_STATUS.md`](PHASE_2_STATUS.md),
 [`PHASE_3_STATUS.md`](PHASE_3_STATUS.md),
-[`PHASE_4_STATUS.md`](PHASE_4_STATUS.md), and
-[`PHASE_5_STATUS.md`](PHASE_5_STATUS.md) for exactly what was built and
+[`PHASE_4_STATUS.md`](PHASE_4_STATUS.md),
+[`PHASE_5_STATUS.md`](PHASE_5_STATUS.md), and
+[`PHASE_6_STATUS.md`](PHASE_6_STATUS.md) for exactly what was built and
 tested versus what's still a placeholder.
 
 ## What works right now
@@ -64,28 +65,41 @@ tested versus what's still a placeholder.
   `NEEDS_HUMAN_INTERVENTION` rather than looping forever). See
   [`PHASE_5_STATUS.md`](PHASE_5_STATUS.md) for exactly what this does and
   doesn't prove about patch *quality* (it doesn't — see below).
-- A real pytest suite, **180 tests total**, run in this session and
+- **Code review & security scanning** (`tools/security`, `agents/reviewer`,
+  `agents/security`): real AST-based static analysis (`eval`/`exec`,
+  `shell=True`, insecure deserialization, unsafe `yaml.load`, SQL built
+  via string formatting, hardcoded credentials) and regex-based secret
+  detection (AWS keys, private key material, Slack/GitHub tokens), both
+  deterministic — no LLM call, same principle as the Repository Explorer
+  Agent. The Code Review Agent reviews only a proposed patch's actual
+  content and correctly flags `MockLLMProvider`'s own stub patches as
+  unimplemented — a true finding about this project's current LLM layer,
+  not a staged example. See [`PHASE_6_STATUS.md`](PHASE_6_STATUS.md).
+- A real pytest suite, **217 tests total**, run in this session and
   double-checked in clean Python 3.12 virtual environments matching CI
   (not just the pre-warmed shared dev venv — see `PHASE_5_STATUS.md` for
-  why that distinction matters): `code_intelligence` (40), `core` (37),
-  `sandbox` (12), `tools` (52), `agents` (19), `apps/api` (20), plus the
-  frontend build.
+  why that distinction matters, including a real CI-only bug it caught):
+  `code_intelligence` (40), `core` (37), `sandbox` (12), `tools` (80),
+  `agents` (28), `apps/api` (20), plus the frontend build.
 
 ## What does not exist yet
 
-Automated code review/security agents, Git branch/PR automation,
-observability, and the evaluation harness. These are Phases 6-10 of the
-roadmap below and are not implemented — the corresponding agent
-directories (`agents/architecture`, `agents/tester`, `agents/reviewer`,
-`agents/security`, `agents/documentation`, `agents/validator`) and
-`evaluation/` are empty scaffolding. The agent pipeline
-(`core/orchestration/graph.py`, used by `/api/tasks`) does not yet call
-the self-correction loop or any Phase 4 tool — it still stops after the
-Coding Agent proposes a patch. `MockLLMProvider`'s patch content is a
+Git branch/PR automation, observability, and the evaluation harness.
+These are Phases 7-10 of the roadmap below and are not implemented — the
+corresponding agent directories (`agents/architecture`, `agents/tester`,
+`agents/documentation`, `agents/validator`) and `evaluation/` are empty
+scaffolding. The agent pipeline (`core/orchestration/graph.py`, used by
+`/api/tasks`) does not yet call the self-correction loop, the Phase 4
+tools, or the new Phase 6 review/security agents — it still stops after
+the Coding Agent proposes a patch. `MockLLMProvider`'s patch content is a
 deterministic heuristic stub (a valid-but-trivial function), never a real
 fix — the self-correction loop proves the *retry mechanism* is bounded
 and correct, not that any AI is meaningfully debugging code (see
-`PHASE_5_STATUS.md`). A call graph (which function calls which) also
+`PHASE_5_STATUS.md`). The static analysis and secret scanning are
+original, dependency-free implementations covering a deliberately small
+rule set — not a wrapper around a real tool like Semgrep/Bandit/Gitleaks,
+and not checked against live vulnerability-database data (no network
+access to one here). A call graph (which function calls which) also
 doesn't exist yet — only file-level import relationships are resolved.
 See each phase's status doc for the full list of explicit gaps, including
 that no real LLM call has ever been made in this environment (no
@@ -130,10 +144,10 @@ cd ../sandbox && python -m venv .venv && source .venv/Scripts/activate
 pip install -r requirements-dev.txt && python -m pytest -v   # 12 passed
 
 cd ../tools && python -m venv .venv && source .venv/Scripts/activate
-pip install -r requirements-dev.txt && python -m pytest -v   # 52 passed
+pip install -r requirements-dev.txt && python -m pytest -v   # 80 passed
 
 cd ../agents && python -m venv .venv && source .venv/Scripts/activate
-pip install -r requirements-dev.txt && python -m pytest -v   # 19 passed
+pip install -r requirements-dev.txt && python -m pytest -v   # 28 passed
 ```
 
 ### Frontend
@@ -189,7 +203,7 @@ See [`.env.example`](.env.example) for the full list (`DATABASE_URL`,
 3. **Agent core** — `AgentState`, tool framework, LangGraph, planner, repository agent, coding agent. ✅ done
 4. **Autonomous execution** — sandboxed filesystem/terminal tools, patching, test runs. ✅ done (Docker isolation itself unverified — see `PHASE_4_STATUS.md`)
 5. **Self-correction** — debugger, failure classification, iterative patch loop (max 5 iterations). ✅ done (mechanism verified; patch *quality* still depends on `MockLLMProvider`'s heuristic — see `PHASE_5_STATUS.md`)
-6. Code review — static analysis, security scanning.
+6. **Code review** — static analysis, security scanning. ✅ done (real, deterministic checks; not wired into the pipeline yet — see `PHASE_6_STATUS.md`)
 7. Git automation — branches, commits, diffs, PRs, approval workflow.
 8. Evaluation — benchmark tasks, success metrics, cost tracking.
 9. Observability — OpenTelemetry, Prometheus, Grafana.
@@ -208,4 +222,4 @@ are still not implemented.
 ## Contributing
 
 This is an active build-out; see the phase status docs before assuming any
-capability beyond Phase 5 exists.
+capability beyond Phase 6 exists.

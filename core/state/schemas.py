@@ -150,3 +150,60 @@ class SelfCorrectionResult(BaseModel):
     iterations_used: int
     debug_reports: list[DebugReport] = Field(default_factory=list)
     final_test_counts: dict = Field(default_factory=dict)
+
+
+class Severity(str, enum.Enum):
+    """Shared by both code review and security findings (spec sections
+    24-25): BLOCKER/HIGH findings are what gate finalization.
+    """
+
+    BLOCKER = "blocker"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+    INFO = "info"
+
+
+_BLOCKING_SEVERITIES = (Severity.BLOCKER, Severity.HIGH)
+
+
+class ReviewFinding(BaseModel):
+    severity: Severity
+    category: str  # e.g. "security", "style", "maintainability", "dependency"
+    message: str
+    file: str
+    line: int | None = None
+    rule_id: str | None = None
+
+
+class ReviewResult(BaseModel):
+    """Output of the Code Review Agent. `approved` is computed, never
+    asserted by an LLM — see `agents/reviewer/review_agent.py`.
+    """
+
+    findings: list[ReviewFinding] = Field(default_factory=list)
+
+    @property
+    def approved(self) -> bool:
+        return not any(f.severity in _BLOCKING_SEVERITIES for f in self.findings)
+
+
+class SecurityFinding(BaseModel):
+    severity: Severity
+    rule_id: str
+    message: str
+    file: str
+    line: int | None = None
+
+
+class SecurityScanResult(BaseModel):
+    """Output of the Security Agent. `blocks_finalization` mirrors the
+    spec's requirement that security findings above a severity threshold
+    block finalization — here, any BLOCKER/HIGH finding.
+    """
+
+    findings: list[SecurityFinding] = Field(default_factory=list)
+
+    @property
+    def blocks_finalization(self) -> bool:
+        return any(f.severity in _BLOCKING_SEVERITIES for f in self.findings)
