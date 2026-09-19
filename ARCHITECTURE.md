@@ -70,7 +70,7 @@ nothing from real API traffic.
                  Final Validator -> Human Approval -> Git PR
 ```
 
-## What exists today (Phases 1-9)
+## What exists today (Phases 1-10, the complete roadmap)
 
 - `apps/api` — FastAPI backend with JWT authentication (register/login),
   role-based `User` model, `Repository` CRUD scoped to the owner, a
@@ -197,17 +197,40 @@ nothing from real API traffic.
   Prometheus/Grafana instance** — no Docker daemon in this environment.
 - `docker-compose.yml` + `infrastructure/docker/*.Dockerfile` — Postgres,
   Redis, API, web, Prometheus, and Grafana services wired together for
-  local/prod-like runs. (Not yet exercised in this session, and the `api`
-  image does not yet include `code_intelligence`/`core`/`agents`/`tools`/
-  `sandbox` in its build context — see `PHASE_2_STATUS.md`/`PHASE_3_STATUS.md`.)
+  local/prod-like runs. As of Phase 10, `api.Dockerfile` actually
+  includes `code_intelligence`/`core`/`agents`/`tools`/`sandbox` (a gap
+  every earlier phase from Phase 2 onward had explicitly flagged),
+  preserving the exact repo-relative layout those packages' `sys.path`
+  bootstraps depend on. The full multi-service compose stack itself
+  remains unexercised in this session (no Docker daemon in local dev
+  here) — but the `api` image's own build and runtime behavior has been
+  verified for real in CI (see below).
+- `core/config/secrets.py` (Phase 10) — a small `SecretsProvider`
+  interface with `EnvSecretsProvider`, the real environment-variable
+  backend every phase has always used, now behind an explicit interface.
+  `apps/api/app/api/routes/health.py` gained a real `GET /api/ready` that
+  runs an actual query against the database (503 if it fails), distinct
+  from `/api/health`'s liveness check. `infrastructure/nginx/nginx.conf`
+  is a real, complete TLS-terminating reverse-proxy config, syntax
+  verified via `nginx -t` in CI against a throwaway self-signed cert —
+  never run against live traffic.
 - `.github/workflows/ci.yml` — runs `code_intelligence`, `core`,
   `sandbox`, `tools`, `agents`, `evaluation`, and `backend` pytest suites
   (each installing its own `requirements-dev.txt` fresh, which is what caught a
   real cross-package dependency gap during Phase 5 development — see
-  `PHASE_5_STATUS.md`), plus a frontend production build, on every
-  push/PR.
+  `PHASE_5_STATUS.md`), a frontend production build, and, new in Phase
+  10, `docker-build-and-smoke-test` (builds the real API image, runs the
+  real container, polls its real `/api/health`/`/api/ready`/`/metrics`
+  endpoints) and `nginx-config-check` — both genuinely verifiable only in
+  CI, since it has a Docker daemon and this project's local dev
+  environment doesn't (the same fact that caused the Phase 5 `sandbox`
+  default bug). This is the first point in this project's history where
+  the Docker image has actually been proven to build and run.
 
-## What is scaffolded but not implemented (Phase 10+)
+## What is scaffolded but not implemented
+
+This is the end of the 10-phase roadmap; everything below is what
+remains unbuilt or unverified at the end of it, not a "next phase."
 
 `agents/architecture`, `agents/tester`, `agents/documentation`, and
 `agents/validator` are currently empty directories (holding a

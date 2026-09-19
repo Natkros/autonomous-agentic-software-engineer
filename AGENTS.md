@@ -1,19 +1,21 @@
 # Agent Roles
 
-This describes the multi-agent design ForgeAI is built toward. As of
-Phase 9, seven of these agents are real, tested, working code
+This describes the multi-agent design ForgeAI is built toward, across all
+10 roadmap phases. Seven of these agents are real, tested, working code
 (`agents/requirement`, `agents/repository`, `agents/planner`,
 `agents/coder`, `agents/debugger`, `agents/security`, `agents/reviewer` —
 see `PHASE_3_STATUS.md`, `PHASE_5_STATUS.md`, and `PHASE_6_STATUS.md`).
-Phases 7 (git automation), 8 (evaluation), and 9 (observability) added no
-new agent role — per the spec, all three are infrastructure (`tools/git`,
-`core/policies/approval.py`, `evaluation/`, `core/observability/`) that
-*exercises or instruments* the existing agents and tools, not new agents
-themselves. Every tool call any agent makes now produces a real trace
-span, metric, and structured log line (`tools/base.py`'s `Tool.run()`) —
-see `PHASE_9_STATUS.md` for why that instrumentation currently has
-nothing real to observe (no API request path reaches the tool layer
-yet). The remaining four agent roles still hold only empty placeholder
+Phases 7 (git automation), 8 (evaluation), 9 (observability), and 10
+(production deployment) added no new agent role — per the spec, all four
+are infrastructure (`tools/git`, `core/policies/approval.py`,
+`evaluation/`, `core/observability/`, `core/config/secrets.py`,
+`infrastructure/nginx/`) that *exercises, instruments, or deploys* the
+existing agents and tools, not new agents themselves. Every tool call any
+agent makes now produces a real trace span, metric, and structured log
+line (`tools/base.py`'s `Tool.run()`) — see `PHASE_9_STATUS.md` for why
+that instrumentation currently has nothing real to observe (no API
+request path reaches the tool layer yet). The remaining four agent roles
+still hold only empty placeholder
 directories under `agents/`.
 
 | Agent | Responsibility | Phase | Status |

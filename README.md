@@ -9,19 +9,15 @@ graph, code intelligence pipeline, sandboxed execution, evaluation
 framework, observability) is described in [`ARCHITECTURE.md`](ARCHITECTURE.md)
 and [`AGENTS.md`](AGENTS.md).
 
-**This repository is being built incrementally, one phase at a time.**
-Only claim a feature works if the relevant phase's status doc says it was
-actually run and verified. Current status: **Phase 9 complete** — see
-[`PHASE_1_STATUS.md`](PHASE_1_STATUS.md),
-[`PHASE_2_STATUS.md`](PHASE_2_STATUS.md),
-[`PHASE_3_STATUS.md`](PHASE_3_STATUS.md),
-[`PHASE_4_STATUS.md`](PHASE_4_STATUS.md),
-[`PHASE_5_STATUS.md`](PHASE_5_STATUS.md),
-[`PHASE_6_STATUS.md`](PHASE_6_STATUS.md),
-[`PHASE_7_STATUS.md`](PHASE_7_STATUS.md),
-[`PHASE_8_STATUS.md`](PHASE_8_STATUS.md), and
-[`PHASE_9_STATUS.md`](PHASE_9_STATUS.md) for exactly what was built and
-tested versus what's still a placeholder.
+**This repository was built incrementally, one phase at a time.** Only
+claim a feature works if the relevant phase's status doc says it was
+actually run and verified. Current status: **all 10 roadmap phases
+complete** — see [`PHASE_1_STATUS.md`](PHASE_1_STATUS.md) through
+[`PHASE_10_STATUS.md`](PHASE_10_STATUS.md) for exactly what was built and
+tested in each one versus what's explicitly still unverified or out of
+scope. "Complete" describes the roadmap's phases, not a finished,
+production-ready product — see "What does not exist yet" below and each
+phase doc's own limits before relying on any of this.
 
 ## What works right now
 
@@ -115,43 +111,66 @@ tested versus what's still a placeholder.
   config files this phase added (`infrastructure/prometheus/prometheus.yml`,
   `infrastructure/grafana/forgeai-dashboard.json`), neither of which has
   been run against a live instance here.
-- A real pytest suite, **259 tests total**, run in this session and
+- **Production deployment groundwork** (Phase 10): the API's Docker image
+  now actually includes every package it needs at runtime
+  (`code_intelligence`/`core`/`agents`/`tools`/`sandbox` — every earlier
+  phase had flagged this as missing) and is **actually built and run in
+  CI** (`docker-build-and-smoke-test` in `.github/workflows/ci.yml`),
+  polling its real `/api/health`, `/api/ready`, and `/metrics` endpoints
+  on the live container — something impossible to check in this
+  project's local dev environment (no Docker daemon there). `GET
+  /api/ready` runs a real `SELECT 1` against the database and returns a
+  genuine 503 if it fails, distinct from `/api/health`'s liveness check.
+  A real, syntax-verified (via `nginx -t` in CI) TLS-terminating reverse
+  proxy config exists at `infrastructure/nginx/nginx.conf`. A small
+  `SecretsProvider` abstraction (`core/config/secrets.py`) formalizes the
+  environment-variable-based secrets handling every phase already used.
+  See [`PHASE_10_STATUS.md`](PHASE_10_STATUS.md) for what's still
+  missing (no live HTTPS, no cloud deployment, no real secrets-manager
+  backend — none of which could be verified without infrastructure this
+  environment doesn't have).
+- A real pytest suite, **268 tests total**, run in this session and
   double-checked in clean Python 3.12 virtual environments matching CI
   (not just the pre-warmed shared dev venv — see `PHASE_5_STATUS.md` for
   why that distinction matters, including real CI-only bugs it caught in
-  Phases 5 and 7): `code_intelligence` (40), `core` (58), `sandbox` (12),
-  `tools` (95), `agents` (28), `evaluation` (4), `apps/api` (22), plus
-  the frontend build.
+  Phases 5 and 7), plus two CI-only checks (Docker build/smoke-test,
+  nginx config validation) that cannot be reproduced locally at all:
+  `code_intelligence` (40), `core` (64), `sandbox` (12), `tools` (95),
+  `agents` (28), `evaluation` (4), `apps/api` (25), plus the frontend
+  build.
 
 ## What does not exist yet
 
-Production deployment tooling (Phase 10): CI/CD beyond the existing test
-workflow, secrets management, and production monitoring/health-check
-automation. The corresponding agent directories (`agents/architecture`,
-`agents/tester`, `agents/documentation`, `agents/validator`) are empty
-scaffolding. The agent pipeline (`core/orchestration/graph.py`, used by
-`/api/tasks`) does not yet call the self-correction loop, the Phase 4
-tools, the Phase 6 review/security agents, or the Phase 7 git/approval
-tools — it still stops after the Coding Agent proposes a patch, and as a
-direct consequence none of Phase 9's tool-level instrumentation currently
-observes any real API traffic. `MockLLMProvider`'s patch content is a
-deterministic heuristic stub (a valid-but-trivial function), never a real
-fix — the self-correction loop and the evaluation harness built on top of
-it prove the *retry mechanism* is bounded and correct, not that any AI is
-meaningfully debugging or solving code (see
-`PHASE_5_STATUS.md`/`PHASE_8_STATUS.md`). The static analysis and secret
-scanning are original, dependency-free implementations covering a
-deliberately small rule set — not a wrapper around a real tool like
-Semgrep/Bandit/Gitleaks. No pull request has ever actually been opened —
-`GitHubPullRequestClient` is real, complete code that has never been run
-against the live GitHub API here (no network/token in this environment).
-Cost tracking is not wired into any LLM call or pipeline run yet. A call
-graph (which function calls which) also doesn't exist yet — only
-file-level import relationships are resolved. See each phase's status doc
-for the full list of explicit gaps, including that no real LLM call has
-ever been made in this environment, Docker sandboxing has never been run
-against a live daemon here, and no Prometheus/Grafana instance has ever
-scraped or rendered this project's real metrics.
+Every phase's status doc lists its own explicit gaps in detail; the
+recurring ones across the whole project are:
+
+- **The agent pipeline stops at "propose a patch."**
+  `core/orchestration/graph.py` (used by `/api/tasks`) never calls the
+  Phase 5 self-correction loop, the Phase 6 review/security agents, or
+  the Phase 7 git/approval tools — each is real, tested, and callable
+  standalone, but none is wired into the pipeline or the API. As a direct
+  consequence, Phase 9's tool-level instrumentation currently observes no
+  real API traffic, and `agents/architecture`, `agents/tester`,
+  `agents/documentation`, and `agents/validator` remain empty
+  placeholders.
+- **No real LLM call has ever been made in this environment.**
+  `MockLLMProvider`'s patch content is a deterministic heuristic stub —
+  the self-correction loop and the evaluation harness built on it prove
+  the *retry mechanism* is bounded and correct, not that any AI is
+  meaningfully debugging or solving code (see
+  `PHASE_5_STATUS.md`/`PHASE_8_STATUS.md`). `AnthropicLLMProvider` is
+  real, complete, unverified code (no network/API key here).
+- **Nothing that requires external infrastructure has been exercised
+  live**: Docker sandboxing (no daemon locally — though CI's does exist
+  and is now used, see Phase 10), a real GitHub PR (no network/token),
+  Prometheus/Grafana actually scraping/rendering this project's metrics,
+  live HTTPS, or any cloud deployment.
+- **The static analysis and secret scanning are original, dependency-free
+  implementations** covering a deliberately small rule set — not a
+  wrapper around a real tool like Semgrep/Bandit/Gitleaks. A call graph
+  (which function calls which) also doesn't exist — only file-level
+  import relationships are resolved. Cost tracking exists but isn't wired
+  into any real LLM call or pipeline run yet.
 
 ## Local development
 
@@ -185,7 +204,7 @@ cd code_intelligence && python -m venv .venv && source .venv/Scripts/activate
 pip install -r requirements-dev.txt && python -m pytest -v   # 40 passed
 
 cd ../core && python -m venv .venv && source .venv/Scripts/activate
-pip install -r requirements-dev.txt && python -m pytest -v   # 58 passed
+pip install -r requirements-dev.txt && python -m pytest -v   # 64 passed
 
 cd ../sandbox && python -m venv .venv && source .venv/Scripts/activate
 pip install -r requirements-dev.txt && python -m pytest -v   # 12 passed
@@ -219,15 +238,21 @@ docker compose up --build
 ```
 
 This brings up Postgres, Redis, the API (port 8000), the web app (port
-3000), Prometheus (port 9090), and Grafana (port 3001). **Note:** this
-compose stack has not been exercised in this environment (no Docker
-daemon available here), and its `api` image does not currently include
-`code_intelligence`/`core`/`agents`/`tools`/`sandbox` in its build
-context, so `/analyze` and `/tasks` would not work inside it as-is — see
-`PHASE_2_STATUS.md`/`PHASE_3_STATUS.md`. The Grafana dashboard file is
+3000), Prometheus (port 9090), and Grafana (port 3001). **Note:** the
+full multi-service compose stack itself (this exact command) has not
+been exercised in this environment (no Docker daemon available in local
+dev here) — but as of Phase 10, the `api` image's own build and runtime
+behavior *has* been verified for real, in CI, which does have a Docker
+daemon (see `PHASE_10_STATUS.md`): the image now includes
+`code_intelligence`/`core`/`agents`/`tools`/`sandbox` and its
+`/api/health`, `/api/ready`, and `/metrics` endpoints have actually
+responded from a real running container. The Grafana dashboard file is
 mounted but not wired into Grafana's provisioning system, so it won't
 auto-load without also adding a provisioning config — see
-`PHASE_9_STATUS.md`.
+`PHASE_9_STATUS.md`. For real HTTPS, see
+`infrastructure/nginx/nginx.conf` (syntax-verified via `nginx -t` in CI;
+you'll need to provide real certificates and wire it in yourself — see
+`PHASE_10_STATUS.md`).
 
 ## Environment variables
 
@@ -239,7 +264,8 @@ See [`.env.example`](.env.example) for the full list (`DATABASE_URL`,
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| GET | `/api/health` | none | Liveness check |
+| GET | `/api/health` | none | Liveness check (never touches the database) |
+| GET | `/api/ready` | none | Readiness check (runs a real query against the database; 503 if unreachable) |
 | POST | `/api/auth/register` | none | Create a user |
 | POST | `/api/auth/login` | none | OAuth2 password flow, returns a JWT |
 | POST | `/api/repositories` | Bearer | Create a repository owned by the caller |
@@ -262,7 +288,7 @@ See [`.env.example`](.env.example) for the full list (`DATABASE_URL`,
 7. **Git automation** — branches, commits, diffs, PRs, approval workflow. ✅ done (branch/commit/push verified against real local repos; PR creation is real, unverified code — see `PHASE_7_STATUS.md`)
 8. **Evaluation** — benchmark tasks, success metrics, cost tracking. ✅ done (measures mechanism convergence, not coding correctness — see `PHASE_8_STATUS.md`)
 9. **Observability** — OpenTelemetry, Prometheus, Grafana. ✅ done (real instrumentation, verified in-process; no live Prometheus/Grafana scrape yet — see `PHASE_9_STATUS.md`)
-10. Production deployment — CI/CD, secrets management, monitoring.
+10. **Production deployment** — CI/CD, secrets management, monitoring. ✅ done (Docker image build+run verified for real in CI; no live HTTPS/cloud deployment/secrets-manager backend — see `PHASE_10_STATUS.md`)
 
 ## Security model
 
@@ -276,5 +302,7 @@ are still not implemented.
 
 ## Contributing
 
-This is an active build-out; see the phase status docs before assuming any
-capability beyond Phase 9 exists.
+All 10 roadmap phases are complete, but "complete" describes the
+roadmap's scope, not a finished product — see each phase status doc, and
+`PHASE_10_STATUS.md`'s "Where this leaves the project" section, before
+assuming any capability beyond what's explicitly documented as verified.

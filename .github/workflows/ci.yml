@@ -109,3 +109,61 @@ jobs:
           node-version: "20"
       - run: npm ci
       - run: npm run build
+
+  # Phase 10: builds the real API Docker image and smoke-tests the actual
+  # running container. This can only be verified here, not in local dev
+  # for this project (no Docker daemon available there) - see
+  # PHASE_10_STATUS.md for exactly what this does and doesn't prove.
+  docker-build-and-smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the API image
+        run: docker build -f infrastructure/docker/api.Dockerfile -t forgeai-api:ci .
+      - name: Run the container
+        run: |
+          docker run -d --name forgeai-api-ci -p 8000:8000 \
+            -e DATABASE_URL=sqlite:///./ci.db -e JWT_SECRET=ci-smoke-test-secret \
+            forgeai-api:ci
+      - name: Wait for readiness and check real endpoints
+        run: |
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:8000/api/health > /dev/null; then
+              echo "API is up"
+              break
+            fi
+            echo "Waiting for API... ($i)"
+            sleep 1
+          done
+          curl -sf http://localhost:8000/api/health | tee /dev/stderr | grep -q '"status":"ok"'
+          curl -sf http://localhost:8000/api/ready | tee /dev/stderr | grep -q '"status":"ready"'
+          curl -sf http://localhost:8000/metrics | tee /dev/stderr | grep -q 'forgeai_tool_calls_total'
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs forgeai-api-ci
+      - name: Tear down
+        if: always()
+        run: docker rm -f forgeai-api-ci || true
+
+  # Phase 10: validates infrastructure/nginx/nginx.conf actually PARSES
+  # via nginx's own `-t` check, run inside the real nginx image - this
+  # cannot be checked at all in local dev here (no nginx installed). A
+  # throwaway self-signed cert is generated only so `listen 443 ssl`'s
+  # cert paths resolve; this proves syntax correctness, not that HTTPS
+  # works end-to-end against real traffic. See PHASE_10_STATUS.md.
+  nginx-config-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate a throwaway self-signed cert
+        run: |
+          mkdir -p /tmp/certs
+          openssl req -x509 -newkey rsa:2048 -nodes \
+            -keyout /tmp/certs/key.pem -out /tmp/certs/cert.pem \
+            -days 1 -subj "/CN=localhost"
+      - name: nginx -t
+        run: |
+          docker run --rm \
+            -v "$(pwd)/infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \
+            -v "/tmp/certs:/etc/nginx/certs:ro" \
+            nginx:alpine nginx -t
