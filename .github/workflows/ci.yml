@@ -155,21 +155,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Generate a throwaway self-signed cert
-        run: |
-          mkdir -p /tmp/certs
-          openssl req -x509 -newkey rsa:2048 -nodes \
-            -keyout /tmp/certs/key.pem -out /tmp/certs/cert.pem \
-            -days 1 -subj "/CN=localhost"
-          # nginx:alpine runs nginx as a non-root user; openssl's default
-          # file permissions (key.pem is not world-readable) block that
-          # user from reading a bind-mounted key created by the runner's
-          # own (different) user. World-readable is fine for a
-          # throwaway cert that lives only for this CI step.
-          chmod a+r /tmp/certs/key.pem /tmp/certs/cert.pem
       - name: nginx -t
         run: |
-          docker run --rm --user root \
+          # The cert is generated INSIDE the container by the same user
+          # that later reads it, rather than on the host and bind-mounted
+          # in - that sidesteps any host/container UID or file-permission
+          # mismatch entirely (a prior bind-mount approach failed nginx -t
+          # for reasons not diagnosable from this API-only access level:
+          # raw job logs require admin rights on this repo). Only
+          # nginx.conf itself is mounted, read-only, from the real repo
+          # file being validated.
+          docker run --rm \
             -v "$(pwd)/infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \
-            -v "/tmp/certs:/etc/nginx/certs:ro" \
-            nginx:alpine sh -c "ls -la /etc/nginx/certs && nginx -t"
+            nginx:alpine sh -c "
+              set -ex
+              apk add --no-cache openssl
+              mkdir -p /etc/nginx/certs
+              openssl req -x509 -newkey rsa:2048 -nodes \
+                -keyout /etc/nginx/certs/key.pem -out /etc/nginx/certs/cert.pem \
+                -days 1 -subj '/CN=localhost'
+              nginx -t
+            "
