@@ -1,2 +1,6 @@
 pydantic==2.13.5
 langgraph==1.2.11
+# core/orchestration/graph.py imports agents.*, which import
+# code_intelligence.* (RepositoryExplorerAgent wraps the Phase 2 scanner) -
+# so core's own test suite needs code_intelligence's runtime deps too.
+-r ../code_intelligence/requirements.txt
