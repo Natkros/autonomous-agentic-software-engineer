@@ -80,9 +80,13 @@ class PatchOperation(str, enum.Enum):
 
 
 class PatchProposal(BaseModel):
-    """A proposed code change. This is a PROPOSAL ONLY — nothing in Phase 3
-    applies it to disk. Applying patches requires the sandboxed filesystem
-    tools built in Phase 4.
+    """A proposed code change.
+
+    `content` is optional: Phase 3's CodingAgent originally produced a
+    description-only proposal (nothing to apply). As of Phase 5, when
+    `content` is present it is real, syntactically valid text that
+    `tools/filesystem/patch_tool.py` can actually apply — see
+    `core/orchestration/self_correction.py` for the loop that does so.
     """
 
     task_id: str
@@ -90,6 +94,7 @@ class PatchProposal(BaseModel):
     operation: PatchOperation
     description: str
     rationale: str
+    content: str | None = None
 
 
 class ToolCallRecord(BaseModel):
@@ -100,3 +105,48 @@ class ToolCallRecord(BaseModel):
     success: bool
     duration_ms: float
     error: str | None = None
+
+
+class FailureCategory(str, enum.Enum):
+    """Per spec section 22 — the Debug Agent classifies a failure into one
+    of these before proposing a fix.
+    """
+
+    SYNTAX_ERROR = "syntax_error"
+    TYPE_ERROR = "type_error"
+    IMPORT_ERROR = "import_error"
+    LOGIC_ERROR = "logic_error"
+    TEST_ERROR = "test_error"
+    CONFIG_ERROR = "config_error"
+    DEPENDENCY_ERROR = "dependency_error"
+    ENVIRONMENT_ERROR = "environment_error"
+    TIMEOUT = "timeout"
+    RESOURCE_ERROR = "resource_error"
+    UNKNOWN = "unknown"
+
+
+class DebugReport(BaseModel):
+    """Output of the Debugger Agent for one failed test run."""
+
+    failure_category: FailureCategory
+    root_cause: str
+    evidence: str
+    proposed_fix: str
+    iteration: int = 0
+
+
+class SelfCorrectionStatus(str, enum.Enum):
+    SUCCESS = "success"
+    NEEDS_HUMAN_INTERVENTION = "needs_human_intervention"
+
+
+class SelfCorrectionResult(BaseModel):
+    """Output of the bounded test -> debug -> patch -> retest loop
+    (spec section 21). `iterations_used` is always <= the loop's
+    `max_iterations` cap (5, per spec) — it never runs forever.
+    """
+
+    status: SelfCorrectionStatus
+    iterations_used: int
+    debug_reports: list[DebugReport] = Field(default_factory=list)
+    final_test_counts: dict = Field(default_factory=dict)

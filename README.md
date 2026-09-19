@@ -11,11 +11,12 @@ and [`AGENTS.md`](AGENTS.md).
 
 **This repository is being built incrementally, one phase at a time.**
 Only claim a feature works if the relevant phase's status doc says it was
-actually run and verified. Current status: **Phase 4 complete** — see
+actually run and verified. Current status: **Phase 5 complete** — see
 [`PHASE_1_STATUS.md`](PHASE_1_STATUS.md),
 [`PHASE_2_STATUS.md`](PHASE_2_STATUS.md),
-[`PHASE_3_STATUS.md`](PHASE_3_STATUS.md), and
-[`PHASE_4_STATUS.md`](PHASE_4_STATUS.md) for exactly what was built and
+[`PHASE_3_STATUS.md`](PHASE_3_STATUS.md),
+[`PHASE_4_STATUS.md`](PHASE_4_STATUS.md), and
+[`PHASE_5_STATUS.md`](PHASE_5_STATUS.md) for exactly what was built and
 tested versus what's still a placeholder.
 
 ## What works right now
@@ -51,27 +52,45 @@ tested versus what's still a placeholder.
   applies a hand-written patch, and confirms its test suite still passes
   — see [`PHASE_4_STATUS.md`](PHASE_4_STATUS.md) for what's verified vs.
   not (Docker isolation itself is unverified — no live daemon here).
-- A real pytest suite, **163 tests total**, run in this session:
-  `code_intelligence` (40), `core` (30), `sandbox` (12), `tools` (52),
-  `agents` (9), `apps/api` (20), plus the frontend build.
+- **Self-correction loop** (`core/orchestration/self_correction.py`): a
+  real, bounded `CODE -> TEST -> PASS? -> (done) / (diagnose -> patch ->
+  retest)` loop capped at 5 iterations. A real, deterministic
+  `agents/debugger/failure_classifier.py` classifies failures (import
+  error, type error, syntax error, assertion/test failure, timeout, etc.)
+  by actually running broken code and reading pytest's real output — not
+  from crafted fixture strings. The loop is verified to terminate
+  correctly both when a patch succeeds immediately and when nothing could
+  ever make the tests pass (it stops at the cap and reports
+  `NEEDS_HUMAN_INTERVENTION` rather than looping forever). See
+  [`PHASE_5_STATUS.md`](PHASE_5_STATUS.md) for exactly what this does and
+  doesn't prove about patch *quality* (it doesn't — see below).
+- A real pytest suite, **180 tests total**, run in this session and
+  double-checked in clean Python 3.12 virtual environments matching CI
+  (not just the pre-warmed shared dev venv — see `PHASE_5_STATUS.md` for
+  why that distinction matters): `code_intelligence` (40), `core` (37),
+  `sandbox` (12), `tools` (52), `agents` (19), `apps/api` (20), plus the
+  frontend build.
 
 ## What does not exist yet
 
-Self-correction/debugging loops, automated code review/security agents,
-Git branch/PR automation, observability, and the evaluation harness. These
-are Phases 5-10 of the roadmap below and are not implemented — the
-corresponding agent directories (`agents/architecture`, `agents/tester`,
-`agents/debugger`, `agents/reviewer`, `agents/security`,
-`agents/documentation`, `agents/validator`) and `evaluation/` are empty
-scaffolding. The agent pipeline does not yet call any Phase 4 tool — the
-Coding Agent's output is still just a text proposal (see
-`PHASE_3_STATUS.md`/`PHASE_4_STATUS.md` for why wiring a placeholder
-proposal into a real filesystem write wouldn't demonstrate anything). A
-call graph (which function calls which) also doesn't exist yet — only
-file-level import relationships are resolved. See each phase's status doc
-for the full list of explicit gaps, including that no real LLM call has
-ever been made in this environment (no network/API key here) and Docker
-sandboxing has never been run against a live daemon here.
+Automated code review/security agents, Git branch/PR automation,
+observability, and the evaluation harness. These are Phases 6-10 of the
+roadmap below and are not implemented — the corresponding agent
+directories (`agents/architecture`, `agents/tester`, `agents/reviewer`,
+`agents/security`, `agents/documentation`, `agents/validator`) and
+`evaluation/` are empty scaffolding. The agent pipeline
+(`core/orchestration/graph.py`, used by `/api/tasks`) does not yet call
+the self-correction loop or any Phase 4 tool — it still stops after the
+Coding Agent proposes a patch. `MockLLMProvider`'s patch content is a
+deterministic heuristic stub (a valid-but-trivial function), never a real
+fix — the self-correction loop proves the *retry mechanism* is bounded
+and correct, not that any AI is meaningfully debugging code (see
+`PHASE_5_STATUS.md`). A call graph (which function calls which) also
+doesn't exist yet — only file-level import relationships are resolved.
+See each phase's status doc for the full list of explicit gaps, including
+that no real LLM call has ever been made in this environment (no
+network/API key here) and Docker sandboxing has never been run against a
+live daemon here.
 
 ## Local development
 
@@ -105,7 +124,7 @@ cd code_intelligence && python -m venv .venv && source .venv/Scripts/activate
 pip install -r requirements-dev.txt && python -m pytest -v   # 40 passed
 
 cd ../core && python -m venv .venv && source .venv/Scripts/activate
-pip install -r requirements-dev.txt && python -m pytest -v   # 30 passed
+pip install -r requirements-dev.txt && python -m pytest -v   # 37 passed
 
 cd ../sandbox && python -m venv .venv && source .venv/Scripts/activate
 pip install -r requirements-dev.txt && python -m pytest -v   # 12 passed
@@ -114,7 +133,7 @@ cd ../tools && python -m venv .venv && source .venv/Scripts/activate
 pip install -r requirements-dev.txt && python -m pytest -v   # 52 passed
 
 cd ../agents && python -m venv .venv && source .venv/Scripts/activate
-pip install -r requirements-dev.txt && python -m pytest -v   # 9 passed
+pip install -r requirements-dev.txt && python -m pytest -v   # 19 passed
 ```
 
 ### Frontend
@@ -169,7 +188,7 @@ See [`.env.example`](.env.example) for the full list (`DATABASE_URL`,
 2. **Repository intelligence** — indexing, AST, symbol extraction, vector search. ✅ done
 3. **Agent core** — `AgentState`, tool framework, LangGraph, planner, repository agent, coding agent. ✅ done
 4. **Autonomous execution** — sandboxed filesystem/terminal tools, patching, test runs. ✅ done (Docker isolation itself unverified — see `PHASE_4_STATUS.md`)
-5. Self-correction — debugger, failure classification, iterative patch loop (max 5 iterations).
+5. **Self-correction** — debugger, failure classification, iterative patch loop (max 5 iterations). ✅ done (mechanism verified; patch *quality* still depends on `MockLLMProvider`'s heuristic — see `PHASE_5_STATUS.md`)
 6. Code review — static analysis, security scanning.
 7. Git automation — branches, commits, diffs, PRs, approval workflow.
 8. Evaluation — benchmark tasks, success metrics, cost tracking.
@@ -189,4 +208,4 @@ are still not implemented.
 ## Contributing
 
 This is an active build-out; see the phase status docs before assuming any
-capability beyond Phase 4 exists.
+capability beyond Phase 5 exists.

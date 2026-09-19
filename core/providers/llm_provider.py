@@ -25,7 +25,16 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from core.state.schemas import Plan, PatchOperation, PatchProposal, RequirementAnalysis, RiskLevel, Task
+from core.state.schemas import (
+    DebugReport,
+    FailureCategory,
+    Plan,
+    PatchOperation,
+    PatchProposal,
+    RequirementAnalysis,
+    RiskLevel,
+    Task,
+)
 
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
@@ -54,6 +63,8 @@ class MockLLMProvider(LLMProvider):
             return self._plan(user_prompt)  # type: ignore[return-value]
         if schema is PatchProposal:
             return self._patch_proposal(user_prompt)  # type: ignore[return-value]
+        if schema is DebugReport:
+            return self._debug_report(user_prompt)  # type: ignore[return-value]
         raise LLMProviderError(f"MockLLMProvider has no heuristic for schema {schema.__name__}")
 
     @staticmethod
@@ -112,9 +123,24 @@ class MockLLMProvider(LLMProvider):
         return Plan(tasks=tasks)
 
     @staticmethod
-    def _patch_proposal(user_prompt: str) -> PatchProposal:
+    def _slugify_function_name(text: str) -> str:
+        slug = re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
+        slug = re.sub(r"_+", "_", slug)[:40] or "change"
+        if slug[0].isdigit():
+            slug = f"_{slug}"
+        return slug
+
+    @classmethod
+    def _patch_proposal(cls, user_prompt: str) -> PatchProposal:
         """Expects lines ``task_id: <id>``, ``task: <description>``, and
         ``candidate_file: <path>`` — see ``agents/coder/coding_agent.py``.
+
+        For a Python target file, this generates real, syntactically valid
+        (if trivial) content: a new stub function appended to the file —
+        not because it's a good implementation of the task, but because it
+        lets Phase 4/5's apply-and-test machinery actually exercise a real
+        file write. For any other file type, no content is generated
+        (`content=None`) since there's no safe generic template to offer.
         """
         fields = {}
         for line in user_prompt.splitlines():
@@ -122,12 +148,54 @@ class MockLLMProvider(LLMProvider):
                 key, _, value = line.partition(":")
                 fields[key.strip().lower()] = value.strip()
 
+        task_text = fields.get("task", "the requested change")
+        candidate_file = fields.get("candidate_file", "UNKNOWN")
+
+        content = None
+        operation = PatchOperation.REPLACE
+        if candidate_file.endswith(".py"):
+            function_name = f"handle_{cls._slugify_function_name(task_text)}"
+            content = f'\n\ndef {function_name}():\n    """Auto-generated stub for: {task_text}"""\n    pass\n'
+            operation = PatchOperation.INSERT
+
         return PatchProposal(
             task_id=fields.get("task_id", "TASK-001"),
-            file=fields.get("candidate_file", "UNKNOWN"),
-            operation=PatchOperation.REPLACE,
-            description=f"Implement: {fields.get('task', 'the requested change')}",
+            file=candidate_file,
+            operation=operation,
+            description=f"Implement: {task_text}",
             rationale="Heuristic proposal from MockLLMProvider — verify against the real codebase before applying.",
+            content=content,
+        )
+
+    @staticmethod
+    def _debug_report(user_prompt: str) -> DebugReport:
+        """Expects lines ``failure_category: <value>``, ``task: <description>``,
+        and ``output_excerpt: <text>`` — see ``agents/debugger/debugger_agent.py``.
+        The category itself always comes from the real, deterministic
+        classifier in ``agents/debugger/failure_classifier.py``, never from
+        this heuristic — this only fills in the narrative fields.
+        """
+        fields = {}
+        for line in user_prompt.splitlines():
+            if ":" in line:
+                key, _, value = line.partition(":")
+                fields[key.strip().lower()] = value.strip()
+
+        category_raw = fields.get("failure_category", FailureCategory.UNKNOWN.value)
+        try:
+            category = FailureCategory(category_raw)
+        except ValueError:
+            category = FailureCategory.UNKNOWN
+
+        excerpt = fields.get("output_excerpt", "")[:300]
+        return DebugReport(
+            failure_category=category,
+            root_cause=f"Test run failed with a classified {category.value.replace('_', ' ')}; see evidence.",
+            evidence=excerpt or "No output captured.",
+            proposed_fix=(
+                f"Review the {category.value.replace('_', ' ')} in {fields.get('task', 'the failing task')} "
+                "and adjust the proposed patch accordingly."
+            ),
         )
 
 

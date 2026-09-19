@@ -1,3 +1,5 @@
+import ast
+
 import pytest
 
 from core.providers.llm_provider import (
@@ -6,7 +8,7 @@ from core.providers.llm_provider import (
     MockLLMProvider,
     get_default_llm_provider,
 )
-from core.state.schemas import Plan, PatchProposal, RequirementAnalysis
+from core.state.schemas import DebugReport, FailureCategory, Plan, PatchOperation, PatchProposal, RequirementAnalysis
 
 
 def test_mock_provider_extracts_requirement_analysis_from_multi_sentence_request():
@@ -54,6 +56,45 @@ def test_mock_provider_builds_patch_proposal():
     assert isinstance(proposal, PatchProposal)
     assert proposal.file == "app/main.py"
     assert proposal.task_id == "TASK-001"
+
+
+def test_mock_provider_generates_real_syntactically_valid_python_content_for_py_files():
+    provider = MockLLMProvider()
+    prompt = "task_id: TASK-001\ntask: add health endpoint\ncandidate_file: app/main.py"
+    proposal = provider.generate_structured(system_prompt="", user_prompt=prompt, schema=PatchProposal)
+
+    assert proposal.operation == PatchOperation.INSERT
+    assert proposal.content is not None
+    ast.parse(proposal.content)  # must be real, valid Python — not just any string
+
+
+def test_mock_provider_generates_distinct_function_names_per_task():
+    provider = MockLLMProvider()
+    proposal_a = provider.generate_structured(
+        system_prompt="", user_prompt="task_id: A\ntask: add login\ncandidate_file: app/main.py", schema=PatchProposal,
+    )
+    proposal_b = provider.generate_structured(
+        system_prompt="", user_prompt="task_id: B\ntask: add logout\ncandidate_file: app/main.py", schema=PatchProposal,
+    )
+    assert proposal_a.content != proposal_b.content
+
+
+def test_mock_provider_generates_no_content_for_non_python_files():
+    provider = MockLLMProvider()
+    prompt = "task_id: TASK-001\ntask: update styling\ncandidate_file: app/styles.css"
+    proposal = provider.generate_structured(system_prompt="", user_prompt=prompt, schema=PatchProposal)
+    assert proposal.content is None
+    assert proposal.operation == PatchOperation.REPLACE
+
+
+def test_mock_provider_builds_debug_report_using_given_failure_category():
+    provider = MockLLMProvider()
+    prompt = "failure_category: import_error\ntask: add health endpoint\noutput_excerpt: ModuleNotFoundError: no module named foo"
+    report = provider.generate_structured(system_prompt="", user_prompt=prompt, schema=DebugReport)
+
+    assert isinstance(report, DebugReport)
+    assert report.failure_category == FailureCategory.IMPORT_ERROR
+    assert "ModuleNotFoundError" in report.evidence
 
 
 def test_mock_provider_raises_for_unregistered_schema():

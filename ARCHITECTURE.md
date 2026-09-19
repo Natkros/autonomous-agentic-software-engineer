@@ -6,14 +6,16 @@ which parts of it exist today versus which are placeholders for a later phase.
 
 ## Target system
 
-As of Phase 4, everything from USER down through the Terminal/Editor/Git
-tool row is real, running code, EXCEPT that nothing currently connects the
-Planning/Coding agents to the Execution Agent — the tools exist and are
-tested standalone (see "What exists today" below) but the pipeline itself
-stops after producing a patch *proposal*. Docker Sandbox exists as real
-code but is unverified (no live daemon in this environment — see
-`sandbox/README.md`). Test/Debug/Review/Security agents and Git PR
-automation are still Phase 5+.
+As of Phase 5, everything from USER down through Test Agent -> Debug
+Agent exists as real, running code, EXCEPT that nothing currently
+connects the Planning/Coding agents' output to the Execution Agent or the
+self-correction loop to the API pipeline — the tools and the loop exist
+and are tested standalone (see "What exists today" below), but
+`core/orchestration/graph.py` (what `/api/tasks` actually calls) stops
+after producing a patch *proposal*. Docker Sandbox exists as real code
+but is unverified (no live daemon in this environment — see
+`sandbox/README.md`). Review/Security agents and Git PR automation are
+still Phase 6+.
 
 ```
                     USER
@@ -63,7 +65,7 @@ automation are still Phase 5+.
                  Final Validator -> Human Approval -> Git PR
 ```
 
-## What exists today (Phases 1-4)
+## What exists today (Phases 1-5)
 
 - `apps/api` — FastAPI backend with JWT authentication (register/login),
   role-based `User` model, `Repository` CRUD scoped to the owner, a
@@ -90,10 +92,14 @@ automation are still Phase 5+.
 - `core` — `AgentState` (an explicit, JSON-serializable TypedDict) and
   Pydantic schemas for every agent artifact; an `LLMProvider` abstraction
   (`MockLLMProvider`, real deterministic/offline and actually exercised by
-  the test suite; `AnthropicLLMProvider`, real code, unverified — no
-  network/key here); the five-tier `PermissionLevel` / six-tier
-  `AutonomyLevel` policy engine; and `core/orchestration/graph.py`, a real
-  compiled **LangGraph** `StateGraph`. 24/24 tests pass.
+  the test suite — as of Phase 5 it generates real, `ast.parse`-verified
+  Python stub content, not just description text; `AnthropicLLMProvider`,
+  real code, unverified — no network/key here); the five-tier
+  `PermissionLevel` / six-tier `AutonomyLevel` policy engine;
+  `core/orchestration/graph.py`, a real compiled **LangGraph**
+  `StateGraph`; and `core/orchestration/self_correction.py`, the bounded
+  test -> debug -> patch -> retest loop (max 5 iterations, verified to
+  never exceed its cap). 37/37 tests pass.
 - `tools` — the controlled `Tool` interface (permission-checked,
   timed, audit-logged on every call). Three READ_ONLY tools wrapping
   `code_intelligence` (`repository.analyze`, `code.search`,
@@ -110,12 +116,17 @@ automation are still Phase 5+.
   **unverified**, no live daemon here). `get_default_sandbox()` picks
   Docker only after actually confirming a daemon responds. 12/12 tests
   pass.
-- `agents` — four working agents: `RequirementAnalystAgent`,
+- `agents` — five working agents: `RequirementAnalystAgent`,
   `RepositoryExplorerAgent` (no LLM needed — wraps Phase 2's scanner),
   `PlanningAgent` (validates its own output has no dangling task
-  dependencies), and `CodingAgent` (proposes patches; never applies them).
-  9/9 tests pass. The other seven agent roles (architecture, test, debug,
-  review, security, documentation, validator) remain empty placeholders.
+  dependencies), `CodingAgent` (proposes patches), and, new in Phase 5,
+  `DebuggerAgent` with `agents/debugger/failure_classifier.py` — real,
+  deterministic classification of a failed test run into one of 11
+  categories, verified against genuinely broken code (real
+  `ModuleNotFoundError`, `TypeError`, bare-`assert` failures, real
+  `SyntaxError`), not crafted strings. 19/19 tests pass. The other six
+  agent roles (architecture, test-generation, review, security,
+  documentation, validator) remain empty placeholders.
 - `apps/api` also now exposes `POST /api/tasks` and `GET /api/tasks/{id}`,
   which clone a repository and run the full LangGraph pipeline
   (Requirement -> Repository -> Planner -> Coder) against it, storing the
@@ -127,22 +138,27 @@ automation are still Phase 5+.
   include `code_intelligence`/`core`/`agents`/`tools`/`sandbox` in its
   build context — see `PHASE_2_STATUS.md`/`PHASE_3_STATUS.md`.)
 - `.github/workflows/ci.yml` — runs `code_intelligence`, `core`,
-  `sandbox`, `tools`, `agents`, and `backend` pytest suites, plus a
-  frontend production build, on every push/PR.
+  `sandbox`, `tools`, `agents`, and `backend` pytest suites (each
+  installing its own `requirements-dev.txt` fresh, which is what caught a
+  real cross-package dependency gap during Phase 5 development — see
+  `PHASE_5_STATUS.md`), plus a frontend production build, on every
+  push/PR.
 
-## What is scaffolded but not implemented (Phase 5+)
+## What is scaffolded but not implemented (Phase 6+)
 
-`agents/architecture`, `agents/tester`, `agents/debugger`,
-`agents/reviewer`, `agents/security`, `agents/documentation`,
-`agents/validator`, and `evaluation/` are currently empty directories
-(holding a `.gitkeep`) that reserve the shape described in the roadmap.
-None of the self-correction loop, review/security scanning, or evaluation
-harness exists yet. Do not assume any code there works until a later
-phase's status doc says so. (`code_intelligence/`, `core/`,
-`agents/{requirement,repository,planner,coder}`, `tools/`, and `sandbox/`
-are no longer placeholders — see above. Note the Coding Agent and the
-Phase 4 filesystem/terminal/test tools are NOT wired together yet — see
-`PHASE_4_STATUS.md` for why.)
+`agents/architecture`, `agents/tester`, `agents/reviewer`,
+`agents/security`, `agents/documentation`, `agents/validator`, and
+`evaluation/` are currently empty directories (holding a `.gitkeep`) that
+reserve the shape described in the roadmap. None of the review/security
+scanning or evaluation harness exists yet. Do not assume any code there
+works until a later phase's status doc says so. (`code_intelligence/`,
+`core/`, `agents/{requirement,repository,planner,coder,debugger}`,
+`tools/`, and `sandbox/` are no longer placeholders — see above. Note the
+agent pipeline (`core/orchestration/graph.py`, used by `/api/tasks`) does
+NOT call `core/orchestration/self_correction.py` yet — that loop exists
+and is tested as a standalone, callable function, but wiring it into the
+API pipeline was deliberately left for a separate, reviewable change —
+see `PHASE_5_STATUS.md`.)
 
 ## Database schema (Phase 1 subset)
 
