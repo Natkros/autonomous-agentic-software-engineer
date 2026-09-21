@@ -129,6 +129,37 @@ path — and plain idempotent re-runs — covered permanently. Redeployed
 and confirmed live: `GET /api/ready` returns `{"status":"ready",
 "database":"reachable"}` from the real production database.
 
+## A second real bug found capturing screenshots for the README
+
+Logging into the live `forgeai-web` dashboard with a real browser
+(Playwright, to capture real screenshots rather than mockups) failed
+with a CORS/network error: the client was calling
+`http://localhost:8000/api/auth/login` instead of the real live API URL.
+
+Root cause: Next.js inlines every `NEXT_PUBLIC_*` variable into the
+client bundle at `next build` time, not at container startup.
+`infrastructure/docker/web.Dockerfile` only had `NEXT_PUBLIC_API_URL`
+available as a Render *runtime* environment variable — which has zero
+effect on a bundle that was already built and baked into the image
+before the container ever started. `lib/api.ts`'s
+`process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"` fallback
+silently masked this in every context tested before now: local dev
+(`next dev` does read env vars per-request) and Docker Compose (the
+default `http://localhost:8000` happens to be correct there too, since
+a Compose user's own browser reaches the api container through the
+host's published port) — Render's real multi-service deployment was the
+first environment where the placeholder value was actually wrong.
+
+Fixed by declaring `ARG NEXT_PUBLIC_API_URL` (plus re-exporting it as
+`ENV`) in the Dockerfile's builder stage: Render automatically forwards
+any environment variable configured on a service as a same-named Docker
+build argument, so no Render-side configuration change was needed, only
+the Dockerfile fix. `docker-compose.yml`'s web service was updated the
+same way for consistency, even though its default value happened to
+already be correct. Verified by rebuilding and redeploying, then
+re-running the same Playwright login flow against the live site and
+confirming the dashboard actually loads with real repository data.
+
 Deliberately not fixed by opening the database's network access to
 run a one-off manual `alembic stamp` from outside Render's network — the
 auto-mode safety classifier declined that action ("Security Weaken": a

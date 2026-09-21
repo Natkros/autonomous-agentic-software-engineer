@@ -54,6 +54,14 @@ services:
     build:
       context: .
       dockerfile: infrastructure/docker/web.Dockerfile
+      # Next.js inlines NEXT_PUBLIC_* at build time, not container
+      # startup - this must be a build arg, not just `environment:`
+      # below (kept for parity/documentation, but has no effect on the
+      # already-built bundle). Correct here because a docker-compose
+      # user's own browser reaches the api container via the host's
+      # published port, same as localhost:8000 always has.
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
     ports:
