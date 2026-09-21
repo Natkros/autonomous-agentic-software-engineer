@@ -28,6 +28,16 @@ phase doc's own limits before relying on any of this.
 URLs, what's actually verified against them, and the free-tier limits
 that apply.
 
+## Screenshots
+
+Captured against the real live deployment (not mockups) — sign-in and
+the repository dashboard:
+
+<p>
+  <img src="docs/screenshots/login.png" alt="ForgeAI sign-in screen" width="420">
+  <img src="docs/screenshots/dashboard.png" alt="ForgeAI dashboard listing a registered repository" width="420">
+</p>
+
 ## What works right now
 
 - Register/login with JWT auth (FastAPI + bcrypt + `python-jose`).
